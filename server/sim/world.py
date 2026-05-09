@@ -34,6 +34,7 @@ class World:
     match_state: MatchState = "paused"
     scenario_name: str = "demo_planet"
     controller: object = field(default_factory=_default_controller)
+    se_controller: object = field(default_factory=_default_se_controller)
     match_events: list[dict] = field(default_factory=list)
     _next_poi_id: int = 1
     _next_salient_id: int = 1
@@ -109,12 +110,18 @@ class World:
 
             cell.progress += rate * dt
             cap = self._effective_threshold(cell) * 1.5
-            # Strict-clamp: progress stays on the attacker's side. If pushed back to 0,
-            # contestation stalls but persists (cell stays contested until flip).
-            if cell.attacker == Ownership.SUPER_EARTH:
-                cell.progress = max(0.0, min(cap, cell.progress))
-            else:
-                cell.progress = max(-cap, min(0.0, cell.progress))
+            # Symmetric clamp — progress can swing across zero in either
+            # direction. Capture happens at +/- flip_threshold in the
+            # attacker's favor; repulse happens at the opposite repulse
+            # threshold, both resolved in _resolve_flips.
+            cell.progress = max(-cap, min(cap, cell.progress))
+
+            # Active-front latch: stamp whenever progress is in the
+            # attacker's favor by more than the epsilon. Render uses this to
+            # avoid strobing the "active" state on momentary dips.
+            attacker_favor = cell.progress if cell.attacker == Ownership.SUPER_EARTH else -cell.progress
+            if attacker_favor > params.active_progress_epsilon:
+                cell.active_until_tick = self.tick + int(params.active_latch_s * params.tick_hz)
 
     def _stamp_artillery_shock(self) -> None:
         """While an artillery effect is active, force its target cell's
@@ -137,24 +144,44 @@ class World:
 
     def _resolve_flips(self) -> None:
         flips: list[tuple[Cell, Ownership]] = []
+        repulses: list[Cell] = []
 
+        repulse_ratio = self.params.repulse_threshold_ratio
         for cell in self.grid.values():
             if cell.attacker is None:
                 continue
             threshold = self._effective_threshold(cell)
-            if cell.attacker == Ownership.SUPER_EARTH and cell.progress >= threshold:
-                flips.append((cell, Ownership.SUPER_EARTH))
-            elif cell.attacker == Ownership.ENEMY and cell.progress <= -threshold:
-                flips.append((cell, Ownership.ENEMY))
+            repulse = threshold * repulse_ratio
+            if cell.attacker == Ownership.SUPER_EARTH:
+                if cell.progress >= threshold:
+                    flips.append((cell, Ownership.SUPER_EARTH))
+                elif cell.progress <= -repulse:
+                    repulses.append(cell)
+            else:
+                if cell.progress <= -threshold:
+                    flips.append((cell, Ownership.ENEMY))
+                elif cell.progress >= repulse:
+                    repulses.append(cell)
 
         for cell, new_defender in flips:
             self._flip_cell(cell, new_defender)
+        for cell in repulses:
+            self._repulse_cell(cell)
 
     def _effective_threshold(self, cell: Cell) -> float:
         mult = 1.0
         for poi in self.pois.values():
             mult = max(mult, poi.siege_multiplier_for(cell, self.params))
         return self.params.flip_threshold * mult
+
+    def _repulse_cell(self, cell: Cell) -> None:
+        """Incursion driven off — defender keeps the cell, contest state clears."""
+        cell.attacker = None
+        cell.progress = 0.0
+        cell.diver_pressure = 0.0
+        cell.diver_pin = False
+        cell.enemy_resistance = 0.0
+        cell.active_until_tick = -1
 
     def _flip_cell(self, cell: Cell, new_defender: Ownership) -> None:
         breakthrough = self._is_breakthrough(cell, new_defender)
@@ -165,6 +192,7 @@ class World:
         cell.diver_pressure = 0.0
         cell.diver_pin = False
         cell.enemy_resistance = 0.0
+        cell.active_until_tick = -1
 
         # Destroy POIs on this cell whose owner is opposite to the new defender.
         opposite = Ownership.ENEMY if new_defender == Ownership.SUPER_EARTH else Ownership.SUPER_EARTH

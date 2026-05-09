@@ -17,6 +17,7 @@ export interface CellState {
   enemy_supply: number;
   se_supply: number;
   supply_shock_until: number;
+  active_until_tick: number;
 }
 
 export interface PoiState {

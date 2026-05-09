@@ -5,10 +5,10 @@ also be *attacked* by the opposing faction during an active incursion.
 A cell with ``attacker is None`` is held; otherwise it is contested.
 ``progress`` is only meaningful while contested, and is signed:
 positive values mean SE is gaining, negative means Enemy is gaining,
-matching the diver_pressure / enemy_resistance sign convention. The
-sign of progress always matches the active attacker (i.e. SE-attacker
-contestations have progress in [0, cap]; Enemy-attacker contestations
-in [-cap, 0]).
+matching the diver_pressure / enemy_resistance sign convention. Progress
+swings freely across zero — the attacker captures at +/-flip_threshold
+(in their favor) and the incursion is repulsed at the opposite repulse
+threshold, clearing ``attacker`` back to None.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class Cell:
     enemy_supply: float = 1.0       # BFS from enemy capital + fortress sources
     se_supply: float = 1.0          # local SE-density + FOB bonus
     supply_shock_until: int = -1    # tick number; while world.tick < this, enemy_supply reads as 0
+    active_until_tick: int = -1     # tick number; while world.tick < this, the cell renders as an active front
 
     @property
     def is_contested(self) -> bool:
@@ -55,4 +56,5 @@ class Cell:
             "enemy_supply": round(self.enemy_supply, 2),
             "se_supply": round(self.se_supply, 2),
             "supply_shock_until": self.supply_shock_until,
+            "active_until_tick": self.active_until_tick,
         }

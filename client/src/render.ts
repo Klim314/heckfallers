@@ -16,6 +16,7 @@ const COLOR = {
   enemy: "#7a1f1f",
   enemyBorder: "#ff5252",
   contestedBorder: "#f0c43a",
+  contestedBrewing: "#7a6420",
   capital: "#ffffff",
   selection: "#ffffff",
   text: "#d8dde6",
@@ -206,17 +207,42 @@ export class Renderer {
     }
     ctx.closePath();
 
-    // Fill always reflects the defender — yellow border conveys contestation.
+    // Fill reflects the defender. The border tells a 3-state story:
+    //   held    -> defender stroke
+    //   brewing -> dim yellow dashed (contested but the attacker isn't
+    //              currently winning ground; signals "fight here, may pile on")
+    //   active  -> bold yellow (sim has stamped active_until_tick because
+    //              the attacker recently held > epsilon of progress)
     const fill = c.defender === "se" ? COLOR.se : COLOR.enemy;
     const factionStroke = c.defender === "se" ? COLOR.seBorder : COLOR.enemyBorder;
     const isContested = c.attacker !== null;
-    const stroke = isContested ? COLOR.contestedBorder : factionStroke;
+    const tick = this.store.current?.tick ?? 0;
+    const isActive = isContested && tick < c.active_until_tick;
 
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.lineWidth = c.is_capital ? 2.5 : (isContested ? 2 : 1);
-    ctx.strokeStyle = c.is_capital ? COLOR.capital : stroke;
-    ctx.stroke();
+    if (c.is_capital) {
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = COLOR.capital;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    } else if (isActive) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = COLOR.contestedBorder;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    } else if (isContested) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COLOR.contestedBrewing;
+      ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = factionStroke;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    }
 
     if (isContested) {
       this.drawProgressBar([c.q, c.r], c.progress, c.diver_pressure, c.enemy_resistance);

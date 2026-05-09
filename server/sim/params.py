@@ -33,6 +33,16 @@ class SimParams:
     node_radius: int = 1
 
     flip_threshold: float = 100.0       # progress magnitude required to flip a cell
+    # Repulse: a contested cell's incursion is driven off when progress moves
+    # against the attacker by this magnitude. Smaller than flip_threshold —
+    # losing a foothold is faster than capturing a cell.
+    repulse_threshold_ratio: float = 0.5
+    # Active-front latch. When progress is in the attacker's favor by more
+    # than the epsilon, the cell is stamped "active" for this many seconds so
+    # the visual signal doesn't strobe on momentary dips. Sim default is a
+    # few seconds for fast iteration; the live game would set this in minutes.
+    active_progress_epsilon: float = 5.0
+    active_latch_s: float = 4.0
 
     # Supply system. Defender uses BFS over same-faction cells from rooted
     # sources (enemy capital + fortresses). Attacker uses local same-faction
@@ -71,6 +81,15 @@ class SimParams:
     allocation_period_ticks: int = 5             # ~1s at 5Hz
     allocation_temperature: float = 1.0          # low=concentrate, high=spread
     diver_supply_max_hops: int = 2               # contested cells beyond this hex-distance from any SE-held cell are cut off
+
+    # SE high command (strategic infrastructure planner). Sibling to the
+    # diver allocator above: the allocator is the player-proxy executor,
+    # high command is the planner that places/moves FOBs and artillery.
+    # Costs draw from a shared ``requisition`` pool that accrues every
+    # tick; per-type cost curves and action wiring land in later phases.
+    high_command_enabled: bool = False           # off by default until later phases land
+    high_command_period_ticks: int = 100         # ~20s at 5Hz — strategic cadence
+    requisition_per_tick: float = 0.5            # smooth accrual rate of the build pool
 
     def to_dict(self) -> dict:
         return asdict(self)
