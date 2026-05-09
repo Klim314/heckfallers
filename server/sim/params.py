@@ -14,7 +14,7 @@ class SimParams:
     tick_hz: float = 5.0                # sim ticks per second
     base_rate: float = 0.5              # baseline progress per second on a contested cell
     pressure_coefficient: float = 0.05  # progress per (pressure-unit * second)
-    enemy_budget_ratio: float = 0.6     # enemy resistance budget as a fraction of total diver pressure
+    enemy_resistance_base: float = 6.0  # defender resistance magnitude per contested cell; supply-modulated at apply
     enemy_ai_period_ticks: int = 5      # enemy AI runs every N ticks
     enemy_spawn_period_ticks: int = 50  # resistance-node spawn cadence
 

@@ -2,10 +2,12 @@
 
 Two responsibilities, both runnable in isolation:
 
-- ``update_enemy_pressure(world)``: distribute an enemy "budget" across
-  contested cells weighted by perceived threat (diver pressure + nearby
-  friendly POIs). The result is written into ``cell.enemy_resistance``,
-  which the tick loop subtracts from progress.
+- ``update_enemy_pressure(world)``: stamp a constant defender-resistance
+  magnitude on every contested cell. Supply scaling (and breakthrough
+  shocks) are applied by the world tick, so this stays decoupled from SE
+  pressure — pressure is a real lever, not echoed back at the player.
+  Defender POIs (fortress, resistance node) layer their own contribution
+  via ``poi.effect_on``.
 - ``maybe_spawn_resistance_node(world)``: occasionally drop a Resistance
   Node POI on the most-pressured enemy or contested cell.
 
@@ -25,30 +27,9 @@ if TYPE_CHECKING:
 
 
 def update_enemy_pressure(world: "World") -> None:
-    contested = world.contested_cells()
-    if not contested:
-        return
-
-    params = world.params
-
-    # "Threat" is computed in SE-force units (same scale as the per-tick
-    # rate the sim applies). That way the enemy budget — a fraction of
-    # total SE force — counter-pressures cleanly: ratio < 1 lets SE win
-    # contested cells; ratio > 1 means the enemy outproduces SE.
-    threats: dict[Coord, float] = {}
-    for cell in contested:
-        force = cell.diver_pressure * params.pressure_coefficient
-        for poi in world.pois.values():
-            if poi.owner == Ownership.SUPER_EARTH:
-                force += poi.effect_on(cell, world)
-        threats[cell.coord] = max(0.0, force) + 1e-3
-
-    total_force = sum(threats.values())
-    budget = total_force * params.enemy_budget_ratio
-
-    for cell in contested:
-        share = threats[cell.coord] / total_force
-        cell.enemy_resistance = budget * share
+    base = world.params.enemy_resistance_base
+    for cell in world.contested_cells():
+        cell.enemy_resistance = base
 
 
 def maybe_spawn_resistance_node(world: "World") -> None:
