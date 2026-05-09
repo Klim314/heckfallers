@@ -1,0 +1,43 @@
+"""Tunable simulation parameters.
+
+These are exposed via the controller panel — sliders bind to fields here.
+Defaults targeted at a ~5 minute match when controllers actively
+concentrate diver pressure.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+
+
+@dataclass
+class SimParams:
+    tick_hz: float = 5.0                # sim ticks per second
+    base_rate: float = 0.5              # baseline progress per second on a contested cell
+    pressure_coefficient: float = 0.05  # progress per (pressure-unit * second)
+    enemy_budget_ratio: float = 0.6     # enemy resistance budget as a fraction of total diver pressure
+    enemy_ai_period_ticks: int = 5      # enemy AI runs every N ticks
+    enemy_spawn_period_ticks: int = 50  # resistance-node spawn cadence
+
+    fob_buff: float = 5.0               # +rate to contested cells in FOB radius (radius 2)
+    fob_radius: int = 2
+
+    arty_buff: float = 12.0             # +rate during artillery effect
+    arty_duration_s: float = 8.0        # seconds of effect per shell
+    arty_default_shells: int = 5
+
+    fortress_resist: float = 6.0        # added to enemy contribution within radius 3
+    fortress_radius: int = 3
+    fortress_siege_multiplier: float = 2.0  # cells under fortress need this x progress to flip
+
+    node_resist: float = 2.0            # node + neighbors
+    node_radius: int = 1
+
+    flip_threshold: float = 100.0       # progress magnitude required to flip a cell
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def update_from(self, partial: dict) -> None:
+        for k, v in partial.items():
+            if hasattr(self, k):
+                setattr(self, k, type(getattr(self, k))(v))

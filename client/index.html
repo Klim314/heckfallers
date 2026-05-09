@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hexa War Sim</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <span class="brand">HEXA</span>
+        <span class="stat" id="stat-se">SE: --%</span>
+        <span class="stat" id="stat-enemy">Enemy: --%</span>
+        <span class="stat" id="stat-contested">Contested: --</span>
+        <span class="stat" id="stat-tick">Tick 0</span>
+        <span class="stat" id="stat-elapsed">0:00</span>
+        <span class="stat status" id="stat-status">paused</span>
+      </header>
+      <main id="map">
+        <canvas id="canvas"></canvas>
+        <div id="banner" class="hidden"></div>
+      </main>
+      <aside id="sidebar">
+        <section class="panel">
+          <h3>Sim</h3>
+          <div class="row">
+            <button id="btn-start">Start</button>
+            <button id="btn-pause">Pause</button>
+            <button id="btn-reset">Reset</button>
+          </div>
+          <div class="row">
+            <label>Speed</label>
+            <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1" />
+            <span id="speed-val">1x</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Selected cell</h3>
+          <div id="cell-info">click a hex</div>
+          <div class="row">
+            <label>Diver pressure</label>
+            <input type="range" id="pressure" min="0" max="500" step="10" value="0" disabled />
+            <span id="pressure-val">0</span>
+          </div>
+          <div class="row poi-buttons">
+            <button data-poi="fob" data-owner="se">+ FOB</button>
+            <button data-poi="artillery" data-owner="se">+ Arty</button>
+            <button data-poi="fortress" data-owner="enemy">+ Fortress</button>
+            <button data-poi="resistance_node" data-owner="enemy">+ Node</button>
+          </div>
+          <div class="row">
+            <button id="btn-fire">Fire artillery here</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Globals</h3>
+          <div class="row">
+            <label title="baseline progress per second on contested cells">Base rate</label>
+            <input type="range" data-param="base_rate" min="0" max="3" step="0.1" value="0.5" />
+            <span data-show="base_rate">0.5</span>
+          </div>
+          <div class="row">
+            <label title="progress per (pressure-unit * second)">Pressure coef</label>
+            <input type="range" data-param="pressure_coefficient" min="0.01" max="0.2" step="0.01" value="0.05" />
+            <span data-show="pressure_coefficient">0.05</span>
+          </div>
+          <div class="row">
+            <label title="enemy resistance budget vs SE force">Enemy budget</label>
+            <input type="range" data-param="enemy_budget_ratio" min="0" max="1.5" step="0.05" value="0.6" />
+            <span data-show="enemy_budget_ratio">0.6</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Selected POI</h3>
+          <div id="poi-info">click a POI</div>
+          <div class="row">
+            <button id="btn-remove-poi" disabled>Remove POI</button>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

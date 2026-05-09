@@ -1,0 +1,16 @@
+{
+  "name": "demo_planet",
+  "ascii_grid": [
+    "SSSSSSEEEEEE",
+    "SSSSSSEEEEEE",
+    "SSSSSSEEEEXE",
+    "SSSSSSEEEEEE",
+    "SSSSSSEEEEEE"
+  ],
+  "pois": [
+    {"kind": "fob",       "owner": "se",    "q": 3,  "r": 1},
+    {"kind": "fob",       "owner": "se",    "q": 3,  "r": 3},
+    {"kind": "artillery", "owner": "se",    "q": 1,  "r": 2},
+    {"kind": "fortress",  "owner": "enemy", "q": 9,  "r": 2}
+  ]
+}
