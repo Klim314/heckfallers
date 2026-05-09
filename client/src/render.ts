@@ -5,7 +5,7 @@
 // only happen via WS callbacks (the render loop is read-only).
 
 import { axialToPixel, hexCorners, type Coord, type Layout } from "./hex";
-import type { CellState, PoiState, SalientState, WorldStore } from "./state";
+import type { CellState, PoiKind, PoiState, SalientState, WorldStore } from "./state";
 
 const COLOR = {
   bg: "#07090d",
@@ -25,18 +25,20 @@ const COLOR = {
   salient: "#ff3838",
 };
 
-const POI_GLYPH: Record<PoiState["kind"], string> = {
+const POI_GLYPH: Record<PoiKind, string> = {
   fob: "F",
   artillery: "A",
   fortress: "X",
   resistance_node: "n",
+  build_site: "?",   // overridden at draw time by state.target_kind glyph
 };
 
-const POI_RADIUS_PARAM: Record<PoiState["kind"], string> = {
+const POI_RADIUS_PARAM: Record<PoiKind, string> = {
   fob: "fob_radius",
-  artillery: "fob_radius", // arty has a single-cell effect; show small marker
+  artillery: "arty_range",
   fortress: "fortress_radius",
   resistance_node: "node_radius",
+  build_site: "",   // no halo for pending sites — skipped in the halo pass
 };
 
 interface AreaCircle {
@@ -168,10 +170,14 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Pass 1: draw POI effect halos (under cells but visible).
+    // Pass 1: draw POI effect halos (under cells but visible). Build sites
+    // contribute no buff so they get no halo; artillery now has a real
+    // arty_range firing gate so its range cone is meaningful to render.
     for (const poi of snap.pois) {
-      const radius = (snap.params[POI_RADIUS_PARAM[poi.kind]] ?? 0) as number;
-      if (radius <= 0 || poi.kind === "artillery") continue;
+      if (poi.kind === "build_site") continue;
+      const param = POI_RADIUS_PARAM[poi.kind];
+      const radius = (snap.params[param] ?? 0) as number;
+      if (radius <= 0) continue;
       this.drawHaloRing([poi.q, poi.r], radius, poi.owner === "se" ? COLOR.seBorder : COLOR.enemyBorder);
     }
 
@@ -303,6 +309,10 @@ export class Renderer {
   }
 
   private drawPoi(poi: PoiState): void {
+    if (poi.kind === "build_site") {
+      this.drawBuildSite(poi);
+      return;
+    }
     const ctx = this.ctx;
     const center = axialToPixel([poi.q, poi.r], this.layout);
     const r = this.layout.size * 0.42;
@@ -333,6 +343,54 @@ export class Renderer {
         ctx.setLineDash([]);
       }
     }
+  }
+
+  private drawBuildSite(poi: PoiState): void {
+    const ctx = this.ctx;
+    const center = axialToPixel([poi.q, poi.r], this.layout);
+    const r = this.layout.size * 0.42;
+    const targetKind = poi.state.target_kind as PoiKind | undefined;
+    const completesAt = (poi.state.completes_at as number | undefined) ?? 0;
+    const tick = this.store.current?.tick ?? 0;
+    const tickHz = (this.store.current?.params.tick_hz ?? 5) as number;
+    const remaining = Math.max(0, completesAt - tick);
+    const stroke = poi.owner === "se" ? COLOR.seBorder : COLOR.enemyBorder;
+
+    // Translucent dashed circle conveys "pending / under construction".
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(center.x, center.y + this.layout.size * 0.05, r, 0, Math.PI * 2);
+    ctx.fillStyle = poi.owner === "se" ? "#0d1f33" : "#330d0d";
+    ctx.globalAlpha = 0.45;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Dimmed glyph of the *target* kind so the player can read what's
+    // being built without knowing the build_site abstraction.
+    const glyph = targetKind ? POI_GLYPH[targetKind] : POI_GLYPH.build_site;
+    ctx.fillStyle = stroke;
+    ctx.globalAlpha = 0.65;
+    ctx.font = `bold ${Math.round(this.layout.size * 0.5)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, center.x, center.y + this.layout.size * 0.05);
+    ctx.globalAlpha = 1;
+
+    // Countdown above the glyph in seconds.
+    if (remaining > 0) {
+      const seconds = Math.ceil(remaining / tickHz);
+      ctx.fillStyle = COLOR.text;
+      ctx.font = `${Math.round(this.layout.size * 0.32)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`${seconds}s`, center.x, center.y - this.layout.size * 0.55);
+    }
+    ctx.restore();
   }
 
   private drawHaloRing(coord: Coord, radius: number, color: string): void {

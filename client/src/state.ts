@@ -20,12 +20,21 @@ export interface CellState {
   active_until_tick: number;
 }
 
+export type PoiKind =
+  | "fob"
+  | "artillery"
+  | "fortress"
+  | "resistance_node"
+  | "build_site";
+
 export interface PoiState {
   id: string;
-  kind: "fob" | "artillery" | "fortress" | "resistance_node";
+  kind: PoiKind;
   owner: "se" | "enemy";
   q: number;
   r: number;
+  // build_site state carries `target_kind: PoiKind` and `completes_at: number`.
+  // artillery state carries `shells`, `target`, `expires_at`.
   state: Record<string, unknown>;
 }
 
@@ -57,6 +66,8 @@ export interface WorldSnapshot {
   pois: PoiState[];
   salients: SalientState[];
   controller: string;
+  se_controller: string;
+  requisition: number;
   match_events: MatchEvent[];
 }
 

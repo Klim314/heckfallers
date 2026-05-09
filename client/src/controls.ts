@@ -1,8 +1,8 @@
 // Controller panel: wires DOM inputs to REST endpoints and reflects
 // world-state updates back into the panel.
 
-import { coordKey, type Coord } from "./hex";
-import { postControl, type PoiState, type WorldStore } from "./state";
+import { coordKey, distance, type Coord } from "./hex";
+import { postControl, type PoiKind, type PoiState, type WorldStore } from "./state";
 
 export class Controls {
   private pressureInput = document.getElementById("pressure") as HTMLInputElement;
@@ -17,6 +17,7 @@ export class Controls {
   private statContested = document.getElementById("stat-contested")!;
   private statTick = document.getElementById("stat-tick")!;
   private statElapsed = document.getElementById("stat-elapsed")!;
+  private statRequisition = document.getElementById("stat-requisition")!;
   private statStatus = document.getElementById("stat-status")!;
   private speedInput = document.getElementById("speed") as HTMLInputElement;
   private speedVal = document.getElementById("speed-val")!;
@@ -68,7 +69,7 @@ export class Controls {
       btn.addEventListener("click", () => {
         const sel = this.store.ui.selectedCell;
         if (!sel) return;
-        const kind = btn.dataset.poi!;
+        const kind = btn.dataset.poi as PoiKind;
         const owner = btn.dataset.owner!;
         postControl("/control/poi/place", { kind, owner, coord: sel }).catch(console.error);
       });
@@ -110,6 +111,7 @@ export class Controls {
     this.statContested.textContent = `Contested: ${snap.stats.contested}`;
     this.statTick.textContent = `Tick ${snap.tick}`;
     this.statElapsed.textContent = formatElapsed(snap.elapsed_s);
+    this.statRequisition.textContent = `Req: ${Math.round(snap.requisition ?? 0)}`;
     this.statStatus.textContent = snap.match_state.replace("_", " ");
 
     if (snap.match_state === "se_won") {
@@ -166,7 +168,8 @@ export class Controls {
 
       const poi = this.store.poiAt(sel);
       if (poi) {
-        this.poiInfo.textContent = poiSummary(poi);
+        const tickHz = (snap.params.tick_hz as number | undefined) ?? 5;
+        this.poiInfo.textContent = poiSummary(poi, snap.tick, tickHz);
         this.removeBtn.disabled = false;
         this.store.ui.selectedPoiId = poi.id;
       } else {
@@ -177,23 +180,47 @@ export class Controls {
 
       const arty = snap.pois.find((p) => p.kind === "artillery" && p.owner === "se");
       const cellAt = this.store.cellAt(sel);
+      const artyRange = (snap.params.arty_range as number | undefined) ?? 0;
+      const inRange = !!arty && distance([arty.q, arty.r], sel) <= artyRange;
       this.fireBtn.disabled = !arty || ((arty.state.shells as number | undefined) ?? 0) <= 0
-        || !cellAt || cellAt.attacker === null;
+        || !cellAt || cellAt.attacker === null || !inRange;
+
+      // Block manual placement of a kind that's already pending at this
+      // cell (e.g., HighCommand has a build site here for the same kind).
+      const pendingTargetKind = poi && poi.kind === "build_site"
+        ? (poi.state.target_kind as string | undefined)
+        : undefined;
+      document.querySelectorAll<HTMLButtonElement>(".poi-buttons button").forEach((btn) => {
+        const kind = btn.dataset.poi;
+        btn.disabled = pendingTargetKind !== undefined && kind === pendingTargetKind;
+      });
     } else {
       this.cellInfo.textContent = "click a hex";
       this.poiInfo.textContent = "click a POI";
       this.pressureInput.disabled = true;
       this.removeBtn.disabled = true;
       this.fireBtn.disabled = true;
+      document.querySelectorAll<HTMLButtonElement>(".poi-buttons button").forEach((btn) => {
+        btn.disabled = false;
+      });
     }
   }
 }
 
-function poiSummary(poi: PoiState): string {
+function poiSummary(poi: PoiState, currentTick: number, tickHz: number): string {
   const lines = [`${poi.kind} (${poi.owner})`, `at (${poi.q}, ${poi.r})`];
   if (poi.kind === "artillery") {
     lines.push(`shells: ${(poi.state.shells as number | undefined) ?? 0}`);
     if (poi.state.target) lines.push(`target: ${JSON.stringify(poi.state.target)}`);
+  } else if (poi.kind === "build_site") {
+    const target = poi.state.target_kind as string | undefined;
+    if (target) lines.push(`building: ${target}`);
+    const completesAt = poi.state.completes_at as number | undefined;
+    if (completesAt !== undefined) {
+      const remaining = Math.max(0, completesAt - currentTick);
+      const seconds = Math.ceil(remaining / Math.max(tickHz, 0.001));
+      lines.push(`ready in ${seconds}s`);
+    }
   }
   return lines.join("\n");
 }
