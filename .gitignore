@@ -36,7 +36,8 @@ dist-ssr/
 Thumbs.db
 desktop.ini
 
-# Claude Code (keep shared settings, ignore local overrides)
+# Claude Code — settings.json churns with session-accrued permissions, so ignore it
+.claude/settings.json
 .claude/settings.local.json
 .claude/.credentials.json
 
