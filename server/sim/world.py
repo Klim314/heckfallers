@@ -46,6 +46,13 @@ class World:
     _next_salient_id: int = 1
     _supply_dirty: bool = True
     _recent_flips: list[tuple[Coord, int]] = field(default_factory=list)
+    # Retaliation gauge: leaky integrator of net SE captures. Floors at 0,
+    # decays per tick, fires a conquer salient when threshold is crossed.
+    # See params.retaliation_* for tuning.
+    retaliation_gauge: float = 0.0
+    # Buffer of recent SE flip events, used to choose conquer-salient
+    # cluster centers. Pruned each step to recent_se_flip_window_ticks.
+    _recent_se_flips: list[tuple[Coord, int]] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -85,6 +92,17 @@ class World:
         # detection) run unconditionally regardless of which controller is in.
         self.controller.tick(self)
         salient_mod.update_salients(self)
+        # Retaliation gauge: continuous decay + prune the SE-flip buffer
+        # past its window. Runs after the controller so the controller sees
+        # today's accumulated gauge before today's decay erodes it.
+        self.retaliation_gauge = max(
+            0.0, self.retaliation_gauge - self.params.retaliation_gauge_decay_per_tick
+        )
+        flip_window = self.params.recent_se_flip_window_ticks
+        flip_cutoff = self.tick - flip_window
+        self._recent_se_flips = [
+            (c, t) for c, t in self._recent_se_flips if t >= flip_cutoff
+        ]
         # Bound match_events so they don't grow without limit. Latest 20 wins.
         if len(self.match_events) > 20:
             del self.match_events[: len(self.match_events) - 20]
@@ -267,6 +285,17 @@ class World:
         cutoff = self.tick - window_ticks
         self._recent_flips = [(c, t) for c, t in self._recent_flips if t >= cutoff]
         self._recent_flips.append((cell.coord, self.tick))
+
+        # Retaliation gauge — SE captures push up, enemy captures resist.
+        # Floor at 0; decay happens once per step in ``step``.
+        if new_defender == Ownership.SUPER_EARTH:
+            self.retaliation_gauge += self.params.retaliation_w_se_flip
+            self._recent_se_flips.append((cell.coord, self.tick))
+        else:
+            self.retaliation_gauge = max(
+                0.0, self.retaliation_gauge - self.params.retaliation_w_enemy_flip
+            )
+
         self._supply_dirty = True
 
     def _is_breakthrough(self, cell: Cell, new_defender: Ownership) -> bool:
@@ -419,6 +448,8 @@ class World:
         self.elapsed_s = 0.0
         self._supply_dirty = True
         self._recent_flips = []
+        self.retaliation_gauge = 0.0
+        self._recent_se_flips = []
         self.salients.clear()
         self.match_events.clear()
         self._next_salient_id = 1

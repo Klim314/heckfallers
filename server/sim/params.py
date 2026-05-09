@@ -73,6 +73,25 @@ class SimParams:
     destroy_min_score_threshold: float = 0.2     # opportunistic spawn gate
     salient_pressure_magnitude: float = 200.0    # offensive force stamped on corridor cells; consumed in _apply_pressure as salient_pressure * pressure_coefficient * en_factor
 
+    # Retaliation (conquer salients). A leaky-integrator gauge accumulates
+    # SE captures and drains on enemy captures + slow continuous decay; on
+    # crossing the threshold the controller spawns a conquer salient
+    # targeting K densest clusters of recent SE-flip activity. Burst
+    # progress fires retaliation; steady-state grind balances against
+    # decay and never triggers. Floor at 0 — enemy progress can resist
+    # accumulation but doesn't bank a comeback buffer.
+    retaliation_gauge_threshold: float = 50.0    # gauge value at which a conquer salient fires
+    retaliation_gauge_decay_per_tick: float = 0.25
+    retaliation_w_se_flip: float = 1.0           # gauge += per SE capture
+    retaliation_w_enemy_flip: float = 1.0        # gauge -= per enemy capture (clamped at 0)
+    recent_se_flip_window_ticks: int = 300       # buffer span for cluster targeting (~60s at 5Hz)
+    retaliation_period_ticks: int = 5            # gauge-check cadence (~1s at 5Hz)
+    max_active_conquer_salients: int = 1
+    conquer_salient_lifetime_s: float = 120.0    # longer than destroy — sustained low-grade contestation
+    conquer_pressure_magnitude: float = 80.0     # ~40% of destroy magnitude — wide and low-intensity
+    conquer_cluster_count: int = 3               # K densest clusters from the recent-flip buffer
+    conquer_cluster_radius: int = 2              # patch radius around each cluster center
+
     # Factories: enemy POI that pumps a continuous trickle of small
     # incursions on nearby SE cells. Salient is a focused operation;
     # factory is ambient pressure. Each factory keeps a small list of

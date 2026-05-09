@@ -56,6 +56,11 @@ class OpportunisticController:
             self._maybe_spawn_factory(world)
         if world.tick % world.params.salient_period_ticks == 0 and world.tick > 0:
             self._maybe_spawn_destroy_salient(world)
+        # Retaliation runs on a much faster cadence than destroy: the gauge
+        # is event-driven, so a long delay between checks would mean the
+        # rubber-band response lags the burst that triggered it.
+        if world.tick % max(1, world.params.retaliation_period_ticks) == 0:
+            self._maybe_spawn_retaliation_salient(world)
 
     # --------------------------------------------------------------- #
     # Factories
@@ -140,3 +145,40 @@ class OpportunisticController:
             return
 
         salient_mod.spawn_destroy_salient(world, best[1])
+
+    # --------------------------------------------------------------- #
+    # Retaliation (conquer salients)
+    # --------------------------------------------------------------- #
+
+    def _maybe_spawn_retaliation_salient(self, world: "World") -> None:
+        """Fire a conquer salient when the retaliation gauge crosses the
+        threshold and there's room under the conquer cap.
+
+        Cap-hit case: hold the gauge — don't drain — so the retaliation
+        fires the moment a slot frees. Empty-buffer guard handles the rare
+        case where the gauge is at threshold but no recent SE flips remain
+        in the targeting window (defensive only; the buffer window is
+        sized longer than the gauge's time-to-decay-from-threshold so this
+        is essentially unreachable in steady state).
+        """
+        params = world.params
+        if world.retaliation_gauge < params.retaliation_gauge_threshold:
+            return
+
+        active_conquer = sum(1 for s in world.salients.values() if s.kind == "conquer")
+        if active_conquer >= params.max_active_conquer_salients:
+            return
+
+        centers = salient_mod.find_recent_flip_clusters(
+            world._recent_se_flips,
+            k=params.conquer_cluster_count,
+            radius=params.conquer_cluster_radius,
+            window_ticks=params.recent_se_flip_window_ticks,
+            current_tick=world.tick,
+        )
+        if not centers:
+            return
+
+        salient = salient_mod.spawn_conquer_salient(world, centers)
+        if salient is not None:
+            world.retaliation_gauge = 0.0
