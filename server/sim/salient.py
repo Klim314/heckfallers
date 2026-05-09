@@ -93,6 +93,31 @@ def apply_salient_supply(world: "World") -> None:
                 cell.enemy_supply = floor
 
 
+def apply_salient_pressure(world: "World") -> None:
+    """Stamp offensive pressure on corridor cells; clear elsewhere.
+
+    Mirror of ``diver_pressure`` for the enemy attacker side: a constant
+    magnitude on each active corridor cell, consumed in ``_apply_pressure``
+    via ``salient_pressure * pressure_coefficient * en_factor``. Without
+    this term the salient only boosts defender supply, which is easily
+    out-stacked by SE POIs (notably FOBs) within range of the corridor.
+
+    Re-stamped each tick so an expiring salient releases its corridor
+    immediately. Non-contested corridor cells carry the value for
+    visualization only — _apply_pressure skips them.
+    """
+    for cell in world.grid.values():
+        cell.salient_pressure = 0.0
+    magnitude = world.params.salient_pressure_magnitude
+    for s in world.salients.values():
+        for coord in s.corridor:
+            cell = world.grid.get(coord)
+            if cell is None:
+                continue
+            if cell.salient_pressure < magnitude:
+                cell.salient_pressure = magnitude
+
+
 def build_destroy_corridor(world: "World", target: Coord) -> list[Coord] | None:
     """BFS from any enemy-defended cell to ``target``, all cells traversable.
 

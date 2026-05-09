@@ -126,3 +126,69 @@ def test_apply_salient_supply_boosts_corridor():
     floor = w.params.destroy_corridor_supply_floor
     for coord in sal.corridor:
         assert w.grid[coord].enemy_supply >= floor
+
+
+def test_apply_salient_pressure_stamps_corridor_only():
+    w = make_world(width=8)
+    poi = w.place_poi("artillery", Ownership.SUPER_EARTH, (3, 0))
+    sal = salient_mod.spawn_destroy_salient(w, poi.id)
+    assert sal is not None
+
+    salient_mod.apply_salient_pressure(w)
+
+    magnitude = w.params.salient_pressure_magnitude
+    corridor_set = set(sal.corridor)
+    for coord, cell in w.grid.items():
+        if coord in corridor_set:
+            assert cell.salient_pressure == magnitude
+        else:
+            assert cell.salient_pressure == 0.0
+
+
+def test_apply_salient_pressure_clears_when_salient_ends():
+    w = make_world(width=8)
+    poi = w.place_poi("artillery", Ownership.SUPER_EARTH, (3, 0))
+    sal = salient_mod.spawn_destroy_salient(w, poi.id)
+    assert sal is not None
+
+    salient_mod.apply_salient_pressure(w)
+    # Drop the salient (simulate expiry/success).
+    w.salients.clear()
+    salient_mod.apply_salient_pressure(w)
+
+    for cell in w.grid.values():
+        assert cell.salient_pressure == 0.0
+
+
+def test_salient_pressure_drives_progress_against_fob():
+    """A FOB within radius of the contested corridor cell used to stall the
+    salient (rate became net-positive). With salient_pressure stamped on the
+    corridor, the enemy attacker should drive progress negative."""
+    from server.sim.cell import Ownership
+
+    w = make_world(width=8)
+    target = w.place_poi("artillery", Ownership.SUPER_EARTH, (3, 0))
+    # FOB adjacent to the lead cell — within fob_radius of any corridor cell
+    # that is currently contested.
+    w.place_poi("fob", Ownership.SUPER_EARTH, (4, 0))
+
+    sal = salient_mod.spawn_destroy_salient(w, target.id)
+    assert sal is not None
+
+    # Step the world for a few seconds and check the contested corridor
+    # cell's progress is now negative (enemy gaining), not clamped at 0.
+    w.match_state = "running"
+    for _ in range(int(w.params.tick_hz * 3)):  # ~3 simulated seconds
+        w.step()
+
+    # The lead cell that was opened should have moved off zero in the enemy
+    # direction. (corridor[1] is the first SE cell, set to enemy-attacker
+    # by spawn_destroy_salient.)
+    lead = w.grid[sal.corridor[1]]
+    if lead.attacker == Ownership.ENEMY:
+        assert lead.progress < 0.0, (
+            f"expected enemy progress, got {lead.progress}"
+        )
+    else:
+        # Already flipped — the salient won, that also satisfies the test.
+        assert lead.defender == Ownership.ENEMY

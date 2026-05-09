@@ -71,6 +71,7 @@ class SimParams:
     destroy_max_range: int = 8                   # hops from enemy front to target POI
     destroy_corridor_supply_floor: float = 0.7
     destroy_min_score_threshold: float = 0.2     # opportunistic spawn gate
+    salient_pressure_magnitude: float = 200.0    # offensive force stamped on corridor cells; consumed in _apply_pressure as salient_pressure * pressure_coefficient * en_factor
 
     # SE diver allocation. The diver pool is a constant abstraction of
     # playerbase size; each allocation pass distributes it over contested

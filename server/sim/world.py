@@ -71,6 +71,7 @@ class World:
         self.se_controller.tick(self)
 
         self._stamp_artillery_shock()
+        salient_mod.apply_salient_pressure(self)
         self._apply_pressure(dt)
         self._resolve_flips()
         # Resolve any build sites whose timer has elapsed (and that
@@ -110,6 +111,7 @@ class World:
             # stall at progress=0 unless enemy AI actively pushes them.
             rate = params.base_rate
             rate += cell.diver_pressure * params.pressure_coefficient * se_factor
+            rate -= cell.salient_pressure * params.pressure_coefficient * en_factor
             rate -= cell.enemy_resistance * en_factor
 
             for poi in self.pois.values():
