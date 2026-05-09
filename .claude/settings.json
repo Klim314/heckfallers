@@ -45,7 +45,21 @@
       "Bash(python -c \"import sys, json; d = json.load\\(sys.stdin\\); print\\('tick', d['tick'], 'elapsed_s', d['elapsed_s'], 'speed', d['speed'], 'tick_hz', d['params']['tick_hz'], 'expected_elapsed', d['tick'] * \\(1/d['params']['tick_hz']\\) * d['speed']\\)\")",
       "Bash(curl -s -X POST http://localhost:5273/control/sim -H \"content-type: application/json\" -d '{\"action\":\"reset\",\"speed\":1}')",
       "mcp__playwright__browser_close",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(jobs)",
+      "Bash(netstat -ano)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter 'Name=\"python.exe\" OR Name=\"uvicorn.exe\" OR Name=\"node.exe\"' | Where-Object { $_.CommandLine -match 'uvicorn|fastapi|vite|hexa|server.main' } | Select-Object ProcessId,Name,CommandLine | Format-List)",
+      "PowerShell(Stop-Process -Id 48424,23392,41168,48444,32640 -Force -ErrorAction Continue; Start-Sleep -Milliseconds 500; Get-CimInstance Win32_Process -Filter 'Name=\"python.exe\" OR Name=\"uvicorn.exe\" OR Name=\"node.exe\"' | Where-Object { $_.CommandLine -match 'uvicorn|vite|server.main' } | Select-Object ProcessId,Name,CommandLine | Format-List)",
+      "Bash(npx tsc *)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "mcp__playwright__browser_console_messages",
+      "Bash(curl -s http://localhost:8800/state)",
+      "Bash(python -m pytest server/tests/test_salient.py -v)",
+      "Bash(python -m pytest server/tests/ -v)",
+      "Bash(git ls-tree *)"
     ]
   }
 }
