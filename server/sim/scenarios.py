@@ -100,6 +100,10 @@ def load_scenario(world: "World", name: str) -> None:
             coord=coord,
         )
 
+    # Initial seed POIs emit poi_placed events; drop them so the player
+    # event log starts clean rather than full of "match begins" noise.
+    world.match_events.clear()
+
 
 _ASCII_TO_DEFENDER = {
     "S": (Ownership.SUPER_EARTH, False),

@@ -95,7 +95,10 @@ def test_update_salients_expires_when_target_poi_destroyed():
 
     assert sal.id not in w.salients
     # Success event surfaced.
-    assert any(e["type"] == "destroy_salient_success" for e in w.match_events)
+    assert any(
+        e["type"] == "salient_ended" and e.get("reason") == "success"
+        for e in w.match_events
+    )
 
 
 def test_update_salients_expires_on_lifetime():
@@ -107,8 +110,15 @@ def test_update_salients_expires_on_lifetime():
     w.tick = sal.expires_tick
     salient_mod.update_salients(w)
     assert sal.id not in w.salients
-    # Expiry is silent — no success event.
-    assert not any(e["type"] == "destroy_salient_success" for e in w.match_events)
+    # Lifetime expiry surfaces with reason=expired (not success).
+    assert not any(
+        e["type"] == "salient_ended" and e.get("reason") == "success"
+        for e in w.match_events
+    )
+    assert any(
+        e["type"] == "salient_ended" and e.get("reason") == "expired"
+        for e in w.match_events
+    )
 
 
 def test_apply_salient_supply_boosts_corridor():

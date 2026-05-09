@@ -169,3 +169,52 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   margin-bottom: 4px;
 }
 #salient-tooltip.hidden { display: none; }
+
+.events-panel { display: flex; flex-direction: column; }
+
+.event-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-y: auto;
+  height: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.event-log li {
+  padding: 3px 6px;
+  border-left: 2px solid transparent;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  column-gap: 6px;
+  align-items: baseline;
+}
+
+.event-log li .ev-tick {
+  color: var(--muted);
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.event-log li .ev-text {
+  color: var(--text);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.event-log li.ev-se { border-left-color: var(--se); }
+.event-log li.ev-enemy { border-left-color: var(--enemy); }
+.event-log li.ev-contested { border-left-color: var(--contested); }
+.event-log li.ev-system { border-left-color: var(--muted); }
+
+.event-empty {
+  color: var(--muted);
+  font-style: italic;
+  border-left-color: transparent !important;
+}

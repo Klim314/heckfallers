@@ -41,16 +41,31 @@ export interface PoiState {
 
 export interface SalientState {
   id: string;
-  kind: "destroy";
+  kind: "destroy" | "conquer";
   corridor: [number, number][];
-  target: [number, number];
+  target: [number, number] | null;
   target_poi_id: string;
   spawned_tick: number;
   expires_tick: number;
+  region?: [number, number][];
 }
 
+// Match events are append-only on the server (capped to ~100 entries).
+// A `type` discriminator narrows the payload; unknown types render with a
+// generic fallback so the client doesn't break when a new event ships.
+export type MatchEventType =
+  | "cell_captured"
+  | "cell_repulsed"
+  | "salient_spawned"
+  | "salient_ended"
+  | "build_started"
+  | "build_completed"
+  | "poi_placed"
+  | "factory_strike"
+  | "match_ended";
+
 export interface MatchEvent {
-  type: string;
+  type: MatchEventType | string;
   tick: number;
   [key: string]: unknown;
 }

@@ -22,6 +22,7 @@ import random
 from typing import TYPE_CHECKING
 
 from .cell import Ownership
+from .events import emit
 from .grid import Coord, cells_within, neighbors
 from .poi import POI
 
@@ -90,6 +91,11 @@ def tick_factories(world: "World") -> None:
             if cell.attacker is None:
                 cell.attacker = Ownership.ENEMY
                 cell.progress = 0.0
+                emit(
+                    world, "factory_strike",
+                    coord=list(picked),
+                    factory_id=poi.id,
+                )
             live.append([picked[0], picked[1]])
         poi.state["active_targets"] = live
 

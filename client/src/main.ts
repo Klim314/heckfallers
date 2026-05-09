@@ -1,4 +1,5 @@
 import { Controls } from "./controls";
+import { EventsPanel } from "./events_panel";
 import { Renderer } from "./render";
 import { connectStream, WorldStore } from "./state";
 
@@ -6,8 +7,10 @@ const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const store = new WorldStore();
 const controls = new Controls(store);
 const renderer = new Renderer(canvas, store);
+const events = new EventsPanel(store);
 
 controls.init();
+events.init();
 renderer.start();
 
 // Salient hover tooltip — created here so the rest of the app stays unaware.
@@ -39,9 +42,10 @@ canvas.addEventListener("mousemove", (ev) => {
     tooltip.classList.add("hidden");
     return;
   }
-  // Find any salient whose corridor or target includes this cell.
+  // Find any salient whose corridor or target includes this cell. Conquer
+  // salients have target=null and an empty corridor, so they're skipped.
   const hit = snap.salients.find((s) => {
-    if (s.target[0] === coord[0] && s.target[1] === coord[1]) return true;
+    if (s.target && s.target[0] === coord[0] && s.target[1] === coord[1]) return true;
     return s.corridor.some(([q, r]) => q === coord[0] && r === coord[1]);
   });
   if (!hit) {

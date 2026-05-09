@@ -493,7 +493,9 @@ export class Renderer {
     ctx.fill();
     ctx.restore();
 
-    // Pulsing target ring.
+    // Pulsing target ring. Only destroy salients have a target; conquer
+    // salients short-circuit above on the empty corridor.
+    if (s.target === null) return;
     const pulse = (Math.sin(performance.now() / 250) + 1) / 2; // 0..1
     const targetCenter = axialToPixel(s.target, this.layout);
     const baseR = this.layout.size * 0.7;

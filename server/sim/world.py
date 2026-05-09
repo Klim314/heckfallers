@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from .cell import Cell, Ownership
+from .events import emit
 from .grid import Coord, distance, neighbors
 from .params import SimParams
 from .poi import POI, PoiKind
@@ -103,9 +104,9 @@ class World:
         self._recent_se_flips = [
             (c, t) for c, t in self._recent_se_flips if t >= flip_cutoff
         ]
-        # Bound match_events so they don't grow without limit. Latest 20 wins.
-        if len(self.match_events) > 20:
-            del self.match_events[: len(self.match_events) - 20]
+        # Bound match_events so they don't grow without limit. Latest 100 wins.
+        if len(self.match_events) > 100:
+            del self.match_events[: len(self.match_events) - 100]
         self._check_end_state()
 
         self.tick += 1
@@ -182,6 +183,13 @@ class World:
                 }
             else:
                 poi.state = {}
+            emit(
+                self, "build_completed",
+                coord=list(poi.coord),
+                kind=target_kind,
+                owner=poi.owner.value,
+                poi_id=poi.id,
+            )
             self._supply_dirty = True
 
     def _stamp_artillery_shock(self) -> None:
@@ -237,15 +245,23 @@ class World:
 
     def _repulse_cell(self, cell: Cell) -> None:
         """Incursion driven off — defender keeps the cell, contest state clears."""
+        defender = cell.defender.value
         cell.attacker = None
         cell.progress = 0.0
         cell.diver_pressure = 0.0
         cell.diver_pin = False
         cell.enemy_resistance = 0.0
         cell.active_until_tick = -1
+        emit(self, "cell_repulsed", coord=list(cell.coord), defender=defender)
 
     def _flip_cell(self, cell: Cell, new_defender: Ownership) -> None:
         breakthrough = self._is_breakthrough(cell, new_defender)
+        emit(
+            self, "cell_captured",
+            coord=list(cell.coord),
+            defender=new_defender.value,
+            breakthrough=breakthrough,
+        )
 
         cell.defender = new_defender
         cell.attacker = None
@@ -318,21 +334,26 @@ class World:
         return False
 
     def _check_end_state(self) -> None:
+        prev_state = self.match_state
+
         # Capital is an SE-win shortcut: SE wins the moment they capture it.
         # Enemy never wins by holding it (the asymmetric Helldivers framing).
         capital = next((c for c in self.grid.values() if c.is_capital), None)
         if capital is not None and capital.defender == Ownership.SUPER_EARTH and capital.attacker is None:
             self.match_state = "se_won"
-            return
+        else:
+            has_enemy = any(c.defender == Ownership.ENEMY and c.attacker is None for c in self.grid.values())
+            has_se = any(c.defender == Ownership.SUPER_EARTH and c.attacker is None for c in self.grid.values())
+            has_contested = any(c.attacker is not None for c in self.grid.values())
 
-        has_enemy = any(c.defender == Ownership.ENEMY and c.attacker is None for c in self.grid.values())
-        has_se = any(c.defender == Ownership.SUPER_EARTH and c.attacker is None for c in self.grid.values())
-        has_contested = any(c.attacker is not None for c in self.grid.values())
+            if not has_enemy and not has_contested and has_se:
+                self.match_state = "se_won"
+            elif not has_se and not has_contested and has_enemy:
+                self.match_state = "enemy_won"
 
-        if not has_enemy and not has_contested and has_se:
-            self.match_state = "se_won"
-        elif not has_se and not has_contested and has_enemy:
-            self.match_state = "enemy_won"
+        if self.match_state != prev_state and self.match_state in ("se_won", "enemy_won"):
+            winner = "se" if self.match_state == "se_won" else "enemy"
+            emit(self, "match_ended", winner=winner)
 
     # ------------------------------------------------------------------ #
     # Mutators called by control endpoints
@@ -372,6 +393,10 @@ class World:
         poi = POI(id=pid, kind=kind, owner=owner, coord=coord, state=state)
         self.pois[pid] = poi
         self._supply_dirty = True
+        emit(
+            self, "poi_placed",
+            poi_id=pid, kind=kind, owner=owner.value, coord=list(coord),
+        )
         return poi
 
     def place_build_site(
@@ -411,6 +436,14 @@ class World:
             state={"target_kind": target_kind, "completes_at": completes_at},
         )
         self.pois[pid] = poi
+        emit(
+            self, "build_started",
+            coord=list(coord),
+            target_kind=target_kind,
+            owner=owner.value,
+            completes_at=completes_at,
+            poi_id=pid,
+        )
         # Build sites don't change supply (no effect_on contribution), but a
         # later resolution will. Leave _supply_dirty alone here; the resolve
         # phase sets it.

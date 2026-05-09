@@ -282,8 +282,11 @@ def test_conquer_expires_on_lifetime_only():
     w.tick = sal.expires_tick
     salient_mod.update_salients(w)
     assert sal.id not in w.salients
-    # No success event — that's destroy-only.
-    assert not any(e["type"] == "destroy_salient_success" for e in w.match_events)
+    # No success event — that's destroy-only. Conquer ends with reason=expired.
+    assert not any(
+        e["type"] == "salient_ended" and e.get("reason") == "success"
+        for e in w.match_events
+    )
 
 
 # --------------------------------------------------------------------- #

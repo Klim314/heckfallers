@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Literal, TYPE_CHECKING
 
 from .cell import Ownership
+from .events import emit
 from .grid import Coord, cells_within, distance, neighbors
 
 if TYPE_CHECKING:
@@ -58,9 +59,9 @@ class Salient:
 def update_salients(world: "World") -> None:
     """Expire salients past lifetime or whose target POI is gone.
 
-    Emits a match event on success (destroy kind, target POI destroyed)
-    so the client can flash an alert. Lifetime expiry is silent.
-    Conquer salients have no POI target — they only end on lifetime.
+    Emits a ``salient_ended`` event with reason=success|expired so the
+    client log can render the outcome. Conquer salients have no POI
+    target — they only end on lifetime (reason=expired).
     """
     doomed: list[tuple[str, str]] = []  # (salient_id, reason)
     for sid, s in world.salients.items():
@@ -73,13 +74,13 @@ def update_salients(world: "World") -> None:
 
     for sid, reason in doomed:
         s = world.salients.pop(sid)
-        if reason == "success":
-            world.match_events.append({
-                "type": "destroy_salient_success",
-                "tick": world.tick,
-                "salient_id": sid,
-                "target": list(s.target),
-            })
+        emit(
+            world, "salient_ended",
+            salient_id=sid,
+            kind=s.kind,
+            reason=reason,
+            target=list(s.target) if s.target is not None else None,
+        )
 
     if doomed:
         # Corridor cells need to revert from tunneled supply back to BFS.
@@ -233,6 +234,14 @@ def spawn_destroy_salient(world: "World", target_poi_id: str) -> Salient | None:
         expires_tick=world.tick + lifetime_ticks,
     )
     world.salients[sid] = salient
+    emit(
+        world, "salient_spawned",
+        salient_id=sid,
+        kind="destroy",
+        target=list(poi.coord),
+        target_poi_id=target_poi_id,
+        target_kind=poi.kind,
+    )
 
     # Open the lead: the first SE-defended cell along the corridor (from
     # the enemy origin toward the target) becomes contested by enemy if
@@ -331,6 +340,15 @@ def spawn_conquer_salient(world: "World", centers: list[Coord]) -> Salient | Non
         region=region,
     )
     world.salients[sid] = salient
+    emit(
+        world, "salient_spawned",
+        salient_id=sid,
+        kind="conquer",
+        target=None,
+        target_poi_id=None,
+        region_size=len(region),
+        center=list(centers[0]) if centers else None,
+    )
 
     # Open the push: every SE-defended uncontested region cell becomes
     # enemy-attacker. Without this the pressure stamp lands on cells whose
