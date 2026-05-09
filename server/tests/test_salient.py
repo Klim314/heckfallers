@@ -167,6 +167,12 @@ def test_salient_pressure_drives_progress_against_fob():
     from server.sim.cell import Ownership
 
     w = make_world(width=8)
+    # Isolate the salient/FOB physics: with the diver allocator now
+    # diverting forces to defensive contests on a salient corridor, a
+    # non-zero pool would actively repulse the lead and mask the rate
+    # interaction this test exists to cover. SE diver reinforcement is
+    # exercised in test_se_ai.
+    w.params.diver_pool = 0.0
     target = w.place_poi("artillery", Ownership.SUPER_EARTH, (3, 0))
     # FOB adjacent to the lead cell — within fob_radius of any corridor cell
     # that is currently contested.

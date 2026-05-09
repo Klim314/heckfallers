@@ -10,6 +10,7 @@ from .params import SimParams
 from .poi import POI, PoiKind
 from .salient import Salient
 from . import salient as salient_mod
+from . import factory as factory_mod
 from . import supply as supply_mod
 
 
@@ -72,6 +73,8 @@ class World:
 
         self._stamp_artillery_shock()
         salient_mod.apply_salient_pressure(self)
+        factory_mod.tick_factories(self)
+        factory_mod.apply_factory_pressure(self)
         self._apply_pressure(dt)
         self._resolve_flips()
         # Resolve any build sites whose timer has elapsed (and that
@@ -112,6 +115,7 @@ class World:
             rate = params.base_rate
             rate += cell.diver_pressure * params.pressure_coefficient * se_factor
             rate -= cell.salient_pressure * params.pressure_coefficient * en_factor
+            rate -= cell.factory_pressure * params.pressure_coefficient * en_factor
             rate -= cell.enemy_resistance * en_factor
 
             for poi in self.pois.values():
@@ -333,6 +337,8 @@ class World:
                 "target": None,
                 "expires_at": -1,
             }
+        elif kind == "factory":
+            state = {"active_targets": []}
 
         poi = POI(id=pid, kind=kind, owner=owner, coord=coord, state=state)
         self.pois[pid] = poi
@@ -440,6 +446,10 @@ class World:
                     and cell.attacker is None)
         if kind == "resistance_node":
             return owner == Ownership.ENEMY and cell.defender == Ownership.ENEMY
+        if kind == "factory":
+            return (owner == Ownership.ENEMY
+                    and cell.defender == Ownership.ENEMY
+                    and cell.attacker is None)
         return False
 
     def contested_cells(self) -> list[Cell]:

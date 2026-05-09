@@ -4,14 +4,27 @@ The diver agent abstracts the playerbase as a constant pool of force
 that gets distributed across the front each allocation tick. Cells the
 user has pinned (via the controller pressure slider) consume from the
 pool first; the rest is shared via softmax(utility / temperature) over
-the remaining SE-attacker contested cells.
+both offensive (SE-attacker) and defensive (enemy-attacker) contests.
 
-Utility currently combines four pieces:
+When the contested set is empty (e.g., after a wave of repulses),
+``allocate_divers`` opens new fronts on enemy-defended cells bordering
+held SE territory before allocating, so the sim can't deadlock between
+"no contested cells" and "no SE POIs to attract destroy salients".
+
+Offensive utility combines four pieces:
 
 - completion: cells closer to flipping get more divers (finish the job)
 - weakness:   cells with low enemy supply are easier wins
 - frontline:  cells with more SE-defended neighbors are reachable / safer
 - siege:      cells under fortress siege multiplier are deprioritized
+
+Defensive utility (SE cells under enemy push — salients, factories,
+ambient incursion) layers a flat ``defense_priority_bias`` on top of:
+
+- urgency: how close enemy is to capturing this cell
+- threat:  salient_pressure / factory_pressure stamped this tick
+- corridor: membership in an active salient corridor, weighted higher
+            for cells closer to the targeted SE POI (last line of defense)
 
 Future iterations will layer cohort-typed allocation (heavy / objective /
 support) per the design doc, but v1 collapses everything into one pool.
@@ -29,12 +42,25 @@ if TYPE_CHECKING:
 
 
 def allocate_divers(world: "World") -> None:
-    targets = [c for c in world.grid.values()
-               if c.attacker == Ownership.SUPER_EARTH]
-    if not targets:
-        return
-
     params = world.params
+
+    # Defensive contests (enemy-attacker SE cells) compete for the same
+    # diver pool as offensive ones. The defensive utility carries a flat
+    # bias so divers naturally divert to push back active salients /
+    # factories before chasing offensive completions.
+    targets = [c for c in world.grid.values() if c.attacker is not None]
+    if not targets:
+        # Quiet front — open new contestations on every enemy-defended cell
+        # that borders held SE territory. Without this, repulse + zero SE
+        # POIs deadlocks the sim: HighCommand needs SE-attacker cells to
+        # score placements, OpportunisticController needs SE POIs to spawn
+        # destroy salients, and no other path creates contested cells.
+        # Gated on a positive pool: zero divers ⇒ no presence to push with.
+        if params.diver_pool <= 0.0:
+            return
+        targets = _open_new_fronts(world)
+        if not targets:
+            return
 
     # Cut-off filter: a contested cell can only be reinforced if some held
     # SE-defended cell sits within `diver_supply_max_hops`. Beyond that the
@@ -76,6 +102,26 @@ def allocate_divers(world: "World") -> None:
         cell.diver_pressure = free * p
 
 
+def _open_new_fronts(world: "World") -> list[Cell]:
+    """Stamp ``attacker = SE`` on every enemy-defended cell adjacent to held
+    SE territory. Used when the contested set is empty to bootstrap a new
+    push; the regular reachability filter and softmax in ``allocate_divers``
+    handle the opened cells from there.
+    """
+    opened: list[Cell] = []
+    for cell in world.grid.values():
+        if cell.defender != Ownership.ENEMY or cell.attacker is not None:
+            continue
+        for n in neighbors(cell.coord):
+            nc = world.grid.get(n)
+            if nc is not None and nc.defender == Ownership.SUPER_EARTH and nc.attacker is None:
+                cell.attacker = Ownership.SUPER_EARTH
+                cell.progress = 0.0
+                opened.append(cell)
+                break
+    return opened
+
+
 def _within_hops(coord, se_held: set, max_hops: int) -> bool:
     for c in cells_within(coord, max_hops):
         if c in se_held:
@@ -84,8 +130,14 @@ def _within_hops(coord, se_held: set, max_hops: int) -> bool:
 
 
 def _utility(world: "World", cell: Cell) -> float:
-    params = world.params
     threshold = world._effective_threshold(cell)
+    if cell.attacker == Ownership.SUPER_EARTH:
+        return _offensive_utility(world, cell, threshold)
+    return _defensive_utility(world, cell, threshold)
+
+
+def _offensive_utility(world: "World", cell: Cell, threshold: float) -> float:
+    params = world.params
     completion = (cell.progress / threshold) if threshold > 0 else 0.0
 
     weakness = 1.0 - cell.enemy_supply
@@ -102,6 +154,37 @@ def _utility(world: "World", cell: Cell) -> float:
     siege_excess = (threshold / params.flip_threshold) - 1.0
 
     return completion + weakness + frontline - siege_excess
+
+
+def _defensive_utility(world: "World", cell: Cell, threshold: float) -> float:
+    params = world.params
+
+    # Urgency: enemy captures at progress = -threshold, so a more-negative
+    # progress means the cell is closer to falling. Clamp non-negative so a
+    # cell already swinging toward repulse doesn't drag utility down.
+    urgency = max(0.0, -cell.progress / threshold) if threshold > 0 else 0.0
+
+    # Active enemy push terms — present iff the salient/factory mechanic
+    # stamped this cell this tick. Indicator-style (not magnitude-scaled)
+    # since the two pressures use different magnitudes by design.
+    threat = 0.0
+    if cell.salient_pressure > 0.0:
+        threat += 1.0
+    if cell.factory_pressure > 0.0:
+        threat += 0.5
+
+    # Salient corridor: cells closer to the targeted SE POI carry more
+    # weight (last line of defense before the POI is destroyed). corridor
+    # is enemy_origin -> ... -> target, so larger index = closer to target.
+    corridor_bonus = 0.0
+    for s in world.salients.values():
+        if cell.coord not in s.corridor:
+            continue
+        idx = s.corridor.index(cell.coord)
+        denom = max(1, len(s.corridor) - 1)
+        corridor_bonus = max(corridor_bonus, 1.0 + (idx / denom))
+
+    return params.defense_priority_bias + urgency + threat + corridor_bonus
 
 
 def _softmax(values: list[float], temperature: float) -> list[float]:

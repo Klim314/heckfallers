@@ -3,11 +3,14 @@
 Two responsibilities, both runnable in isolation:
 
 - ``update_enemy_pressure(world)``: stamp a constant defender-resistance
-  magnitude on every contested cell. Supply scaling (and breakthrough
-  shocks) are applied by the world tick, so this stays decoupled from SE
-  pressure — pressure is a real lever, not echoed back at the player.
-  Defender POIs (fortress, resistance node) layer their own contribution
-  via ``poi.effect_on``.
+  magnitude on contested cells where ENEMY is the defender. Supply
+  scaling (and breakthrough shocks) are applied by the world tick, so
+  this stays decoupled from SE pressure — pressure is a real lever, not
+  echoed back at the player. Defender POIs (fortress, resistance node)
+  layer their own contribution via ``poi.effect_on``. SE-defended
+  contested cells are zeroed: ``enemy_resistance`` is consumed in
+  ``_apply_pressure`` as a force in the enemy direction, so applying it
+  on a cell where SE defends would push the incursion toward capture.
 - ``maybe_spawn_resistance_node(world)``: occasionally drop a Resistance
   Node POI on the most-pressured enemy or contested cell.
 
@@ -29,7 +32,10 @@ if TYPE_CHECKING:
 def update_enemy_pressure(world: "World") -> None:
     base = world.params.enemy_resistance_base
     for cell in world.contested_cells():
-        cell.enemy_resistance = base
+        if cell.defender == Ownership.ENEMY:
+            cell.enemy_resistance = base
+        else:
+            cell.enemy_resistance = 0.0
 
 
 def maybe_spawn_resistance_node(world: "World") -> None:

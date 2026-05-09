@@ -33,6 +33,7 @@ class Cell:
     diver_pin: bool = False         # user has manually pinned this cell's pressure; AI skips it until flip or release
     enemy_resistance: float = 0.0   # set by enemy AI each tick
     salient_pressure: float = 0.0   # offensive force projected by an active enemy salient on its corridor cells
+    factory_pressure: float = 0.0   # offensive force projected by an enemy factory on its currently-pushed targets
     is_capital: bool = False
     enemy_supply: float = 1.0       # BFS from enemy capital + fortress sources
     se_supply: float = 1.0          # local SE-density + FOB bonus
@@ -54,6 +55,7 @@ class Cell:
             "diver_pin": self.diver_pin,
             "enemy_resistance": round(self.enemy_resistance, 2),
             "salient_pressure": round(self.salient_pressure, 2),
+            "factory_pressure": round(self.factory_pressure, 2),
             "is_capital": self.is_capital,
             "enemy_supply": round(self.enemy_supply, 2),
             "se_supply": round(self.se_supply, 2),

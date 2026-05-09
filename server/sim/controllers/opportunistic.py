@@ -2,6 +2,8 @@
 
 Tactical (every enemy_ai_period_ticks): existing flat resistance stamp.
 Resistance node spawn (every enemy_spawn_period_ticks): existing logic.
+Factory spawn (every factory_period_ticks): probabilistic with soft and
+hard caps — usually sits at the soft cap, occasionally surges above it.
 Strategic (every salient_period_ticks): score every SE fob/artillery by
 ``value / (front_distance + 1)``; if best score > threshold and active
 destroy-salient cap not hit, spawn a destroy salient targeting it.
@@ -12,12 +14,14 @@ struck; a player pushing FOBs to the front pays for it.
 """
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING
 
+from .. import factory as factory_mod
 from .. import salient as salient_mod
 from ..cell import Ownership
 from ..enemy_ai import maybe_spawn_resistance_node, update_enemy_pressure
-from ..grid import Coord, distance
+from ..grid import Coord, cells_within, distance, neighbors
 
 if TYPE_CHECKING:
     from ..world import World
@@ -48,8 +52,54 @@ class OpportunisticController:
             update_enemy_pressure(world)
         if world.tick % world.params.enemy_spawn_period_ticks == 0 and world.tick > 0:
             maybe_spawn_resistance_node(world)
+        if world.tick % world.params.factory_period_ticks == 0 and world.tick > 0:
+            self._maybe_spawn_factory(world)
         if world.tick % world.params.salient_period_ticks == 0 and world.tick > 0:
             self._maybe_spawn_destroy_salient(world)
+
+    # --------------------------------------------------------------- #
+    # Factories
+    # --------------------------------------------------------------- #
+
+    def _maybe_spawn_factory(self, world: "World") -> None:
+        """Probabilistic factory spawn with soft / hard caps.
+
+        Below the soft cap the chance is high (steady stream); between
+        the soft and hard cap it drops sharply so an occasional surge
+        is possible but the average count stays near the soft cap.
+        Placement: any enemy-defended uncontested cell with at least
+        one SE cell within ``factory_radius`` (i.e., the factory has
+        work in reach). Random pick — siting smarts can layer in later.
+        """
+        params = world.params
+        count = sum(1 for p in world.pois.values() if p.kind == "factory")
+        if count >= params.factory_hard_cap:
+            return
+        chance = (params.factory_spawn_chance_below_cap
+                  if count < params.factory_soft_cap
+                  else params.factory_spawn_chance_over_cap)
+        if random.random() > chance:
+            return
+
+        candidates: list[Coord] = []
+        existing = {p.coord for p in world.pois.values() if p.kind == "factory"}
+        for coord, cell in world.grid.items():
+            if cell.defender != Ownership.ENEMY or cell.attacker is not None:
+                continue
+            if coord in existing:
+                continue
+            in_reach = False
+            for c in cells_within(coord, params.factory_radius):
+                nc = world.grid.get(c)
+                if nc is not None and nc.defender == Ownership.SUPER_EARTH:
+                    in_reach = True
+                    break
+            if in_reach:
+                candidates.append(coord)
+        if not candidates:
+            return
+        coord = random.choice(candidates)
+        factory_mod.spawn_factory(world, coord)
 
     # --------------------------------------------------------------- #
     # Strategic

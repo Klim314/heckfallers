@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from .world import World
 
 
-PoiKind = Literal["fob", "artillery", "fortress", "resistance_node", "build_site"]
+PoiKind = Literal["fob", "artillery", "fortress", "resistance_node", "build_site", "factory"]
 
 
 @dataclass

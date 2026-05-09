@@ -73,6 +73,24 @@ class SimParams:
     destroy_min_score_threshold: float = 0.2     # opportunistic spawn gate
     salient_pressure_magnitude: float = 200.0    # offensive force stamped on corridor cells; consumed in _apply_pressure as salient_pressure * pressure_coefficient * en_factor
 
+    # Factories: enemy POI that pumps a continuous trickle of small
+    # incursions on nearby SE cells. Salient is a focused operation;
+    # factory is ambient pressure. Each factory keeps a small list of
+    # active targets and stamps factory_pressure on them — destroying
+    # the factory releases the cells immediately. Soft/hard cap with a
+    # probabilistic spawn so the count usually sits at the soft cap but
+    # occasionally surges above it.
+    factory_period_ticks: int = 50               # placement-attempt cadence (~10s at 5Hz)
+    factory_target_period_ticks: int = 25        # target re-evaluation cadence (~5s at 5Hz)
+    factory_soft_cap: int = 3                    # spawn freely below this
+    factory_hard_cap: int = 5                    # never exceed
+    factory_spawn_chance_below_cap: float = 0.8  # roll chance when count < soft_cap
+    factory_spawn_chance_over_cap: float = 0.25  # roll chance when soft_cap <= count < hard_cap
+    factory_radius: int = 3                      # max hex distance from factory to push
+    factory_pressure_magnitude: float = 40.0     # offensive force stamped on each active target
+    factory_active_cap: int = 2                  # max simultaneous targets per factory
+    factory_obsolete_distance: int = 4           # nearest-SE distance threshold for fortress conversion (later phase)
+
     # SE diver allocation. The diver pool is a constant abstraction of
     # playerbase size; each allocation pass distributes it over contested
     # SE-attacker cells via softmax(utility / temperature). User-pinned
@@ -83,6 +101,11 @@ class SimParams:
     allocation_period_ticks: int = 5             # ~1s at 5Hz
     allocation_temperature: float = 1.0          # low=concentrate, high=spread
     diver_supply_max_hops: int = 2               # contested cells beyond this hex-distance from any SE-held cell are cut off
+    # Flat bonus added to defensive-contest utility (enemy-attacker SE cells)
+    # so divers divert off the offensive front when an enemy salient or
+    # factory is actively pushing into SE territory. Stacks on top of urgency
+    # / threat / corridor-position terms in se_ai._defensive_utility.
+    defense_priority_bias: float = 2.0
 
     # SE high command (strategic infrastructure planner). Sibling to the
     # diver allocator above: the allocator is the player-proxy executor,
