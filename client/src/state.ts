@@ -28,6 +28,22 @@ export interface PoiState {
   state: Record<string, unknown>;
 }
 
+export interface SalientState {
+  id: string;
+  kind: "destroy";
+  corridor: [number, number][];
+  target: [number, number];
+  target_poi_id: string;
+  spawned_tick: number;
+  expires_tick: number;
+}
+
+export interface MatchEvent {
+  type: string;
+  tick: number;
+  [key: string]: unknown;
+}
+
 export interface WorldSnapshot {
   tick: number;
   elapsed_s: number;
@@ -38,11 +54,15 @@ export interface WorldSnapshot {
   stats: { total: number; se: number; enemy: number; contested: number; se_pct: number; enemy_pct: number };
   cells: CellState[];
   pois: PoiState[];
+  salients: SalientState[];
+  controller: string;
+  match_events: MatchEvent[];
 }
 
 export interface UiState {
   selectedCell: Coord | null;
   selectedPoiId: string | null;
+  hoverCell: Coord | null;
 }
 
 type Listener = (snapshot: WorldSnapshot) => void;
@@ -50,7 +70,7 @@ type Listener = (snapshot: WorldSnapshot) => void;
 export class WorldStore {
   private snapshot: WorldSnapshot | null = null;
   private listeners: Set<Listener> = new Set();
-  ui: UiState = { selectedCell: null, selectedPoiId: null };
+  ui: UiState = { selectedCell: null, selectedPoiId: null, hoverCell: null };
 
   get current(): WorldSnapshot | null {
     return this.snapshot;

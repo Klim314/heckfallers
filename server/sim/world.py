@@ -8,23 +8,35 @@ from .cell import Cell, Ownership
 from .grid import Coord, distance, neighbors
 from .params import SimParams
 from .poi import POI, PoiKind
+from .salient import Salient
+from . import salient as salient_mod
 from . import supply as supply_mod
 
 
 MatchState = Literal["running", "paused", "se_won", "enemy_won"]
 
 
+def _default_controller():
+    # Local import keeps controllers free to import World types at module level.
+    from .controllers import OpportunisticController
+    return OpportunisticController()
+
+
 @dataclass
 class World:
     grid: dict[Coord, Cell] = field(default_factory=dict)
     pois: dict[str, POI] = field(default_factory=dict)
+    salients: dict[str, Salient] = field(default_factory=dict)
     params: SimParams = field(default_factory=SimParams)
     tick: int = 0
     elapsed_s: float = 0.0
     speed: float = 1.0
     match_state: MatchState = "paused"
     scenario_name: str = "demo_planet"
+    controller: object = field(default_factory=_default_controller)
+    match_events: list[dict] = field(default_factory=list)
     _next_poi_id: int = 1
+    _next_salient_id: int = 1
     _supply_dirty: bool = True
     _recent_flips: list[tuple[Coord, int]] = field(default_factory=list)
 
@@ -50,12 +62,14 @@ class World:
         self._stamp_artillery_shock()
         self._apply_pressure(dt)
         self._resolve_flips()
-        if self.tick % self.params.enemy_ai_period_ticks == 0:
-            from .enemy_ai import update_enemy_pressure
-            update_enemy_pressure(self)
-        if self.tick % self.params.enemy_spawn_period_ticks == 0 and self.tick > 0:
-            from .enemy_ai import maybe_spawn_resistance_node
-            maybe_spawn_resistance_node(self)
+        # Controller owns enemy decisions (tactical resistance + node spawn +
+        # strategic salient spawning). Salient mechanics (lifetime, success
+        # detection) run unconditionally regardless of which controller is in.
+        self.controller.tick(self)
+        salient_mod.update_salients(self)
+        # Bound match_events so they don't grow without limit. Latest 20 wins.
+        if len(self.match_events) > 20:
+            del self.match_events[: len(self.match_events) - 20]
         self._check_end_state()
 
         self.tick += 1
@@ -286,6 +300,9 @@ class World:
         self.elapsed_s = 0.0
         self._supply_dirty = True
         self._recent_flips = []
+        self.salients.clear()
+        self.match_events.clear()
+        self._next_salient_id = 1
 
     # ------------------------------------------------------------------ #
     # Helpers

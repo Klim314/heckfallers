@@ -109,6 +109,10 @@ def recompute_se_supply(world: "World") -> None:
 def recompute_all(world: "World") -> None:
     recompute_enemy_supply(world)
     recompute_se_supply(world)
+    # Salients project supply along their corridor regardless of normal
+    # BFS connectivity. Post-pass so the tunnel always wins over BFS.
+    from . import salient as salient_mod
+    salient_mod.apply_salient_supply(world)
 
 
 def effective_enemy_supply(cell, tick: int) -> float:

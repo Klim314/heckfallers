@@ -49,6 +49,18 @@ class SimParams:
     breakthrough_window_s: float = 3.0
     breakthrough_duration_s: float = 5.0
 
+    # Salients: directed enemy operations spawned by a controller.
+    # Destroy salients drive a corridor of cells from the front to a
+    # high-value SE POI, projecting supply along the corridor regardless
+    # of normal BFS. The controller decides when to spawn; the salient
+    # primitive owns the mechanics.
+    salient_period_ticks: int = 150              # strategic cadence (~30s at 5Hz)
+    max_active_destroy_salients: int = 1
+    destroy_salient_lifetime_s: float = 90.0
+    destroy_max_range: int = 8                   # hops from enemy front to target POI
+    destroy_corridor_supply_floor: float = 0.7
+    destroy_min_score_threshold: float = 0.2     # opportunistic spawn gate
+
     # SE diver allocation. The diver pool is a constant abstraction of
     # playerbase size; each allocation pass distributes it over contested
     # SE-attacker cells via softmax(utility / temperature). User-pinned

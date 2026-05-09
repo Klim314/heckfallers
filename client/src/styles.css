@@ -146,3 +146,26 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   font-variant-numeric: tabular-nums;
   white-space: pre-wrap;
 }
+
+#salient-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(20, 8, 8, 0.92);
+  border: 1px solid #ff3838;
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  white-space: pre;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+#salient-tooltip .title {
+  color: #ff5252;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+#salient-tooltip.hidden { display: none; }

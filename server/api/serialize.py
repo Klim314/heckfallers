@@ -18,4 +18,7 @@ def world_to_wire(world: "World") -> dict:
         "stats": world.stats(),
         "cells": [c.to_wire() for c in world.grid.values()],
         "pois": [p.to_wire() for p in world.pois.values()],
+        "salients": [s.to_wire() for s in world.salients.values()],
+        "controller": getattr(world.controller, "name", "unknown"),
+        "match_events": list(world.match_events),
     }

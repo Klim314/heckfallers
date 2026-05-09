@@ -5,7 +5,7 @@
 // only happen via WS callbacks (the render loop is read-only).
 
 import { axialToPixel, hexCorners, type Coord, type Layout } from "./hex";
-import type { CellState, PoiState, WorldStore } from "./state";
+import type { CellState, PoiState, SalientState, WorldStore } from "./state";
 
 const COLOR = {
   bg: "#07090d",
@@ -21,6 +21,7 @@ const COLOR = {
   text: "#d8dde6",
   pressure: "#4aa3ff",
   resistance: "#ff5252",
+  salient: "#ff3838",
 };
 
 const POI_GLYPH: Record<PoiState["kind"], string> = {
@@ -183,6 +184,11 @@ export class Renderer {
       this.drawPoi(poi);
     }
 
+    // Pass 3.5: salient overlays (after cells/POIs so the arrow sits on top).
+    for (const s of snap.salients) {
+      this.drawSalient(s);
+    }
+
     // Pass 4: selection ring on top.
     if (this.store.ui.selectedCell) {
       this.drawSelectionRing(this.store.ui.selectedCell);
@@ -324,6 +330,77 @@ export class Renderer {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  private drawSalient(s: SalientState): void {
+    const ctx = this.ctx;
+    if (s.corridor.length < 2) return;
+
+    // Faint cell-shaped overlay along the corridor so the path reads even
+    // when the arrow sits over hex centers.
+    ctx.save();
+    ctx.fillStyle = COLOR.salient;
+    ctx.globalAlpha = 0.08;
+    for (const [q, r] of s.corridor) {
+      const corners = hexCorners([q, r], this.layout);
+      ctx.beginPath();
+      for (let i = 0; i < corners.length; i++) {
+        const p = corners[i];
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Polyline through corridor cell centers.
+    const points = s.corridor.map(([q, r]) => axialToPixel([q, r], this.layout));
+
+    // Animate dash offset for a "marching ants" feel toward the target.
+    const dashOffset = -(performance.now() / 60) % 12;
+
+    ctx.save();
+    ctx.strokeStyle = COLOR.salient;
+    ctx.lineWidth = Math.max(2, this.layout.size * 0.12);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash([8, 4]);
+    ctx.lineDashOffset = dashOffset;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead at target.
+    const last = points[points.length - 1];
+    const prev = points[points.length - 2];
+    const ang = Math.atan2(last.y - prev.y, last.x - prev.x);
+    const head = this.layout.size * 0.45;
+    ctx.fillStyle = COLOR.salient;
+    ctx.beginPath();
+    ctx.moveTo(last.x, last.y);
+    ctx.lineTo(last.x - head * Math.cos(ang - Math.PI / 6), last.y - head * Math.sin(ang - Math.PI / 6));
+    ctx.lineTo(last.x - head * Math.cos(ang + Math.PI / 6), last.y - head * Math.sin(ang + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Pulsing target ring.
+    const pulse = (Math.sin(performance.now() / 250) + 1) / 2; // 0..1
+    const targetCenter = axialToPixel(s.target, this.layout);
+    const baseR = this.layout.size * 0.7;
+    ctx.save();
+    ctx.strokeStyle = COLOR.salient;
+    ctx.lineWidth = 2 + pulse * 2;
+    ctx.globalAlpha = 0.6 + pulse * 0.4;
+    ctx.beginPath();
+    ctx.arc(targetCenter.x, targetCenter.y, baseR + pulse * this.layout.size * 0.15, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawSelectionRing(coord: Coord): void {
