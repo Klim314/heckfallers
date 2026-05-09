@@ -25,7 +25,8 @@ export type PoiKind =
   | "artillery"
   | "fortress"
   | "resistance_node"
-  | "build_site";
+  | "build_site"
+  | "factory";
 
 export interface PoiState {
   id: string;

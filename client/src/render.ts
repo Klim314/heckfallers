@@ -31,6 +31,7 @@ const POI_GLYPH: Record<PoiKind, string> = {
   fortress: "X",
   resistance_node: "n",
   build_site: "?",   // overridden at draw time by state.target_kind glyph
+  factory: "f",
 };
 
 const POI_RADIUS_PARAM: Record<PoiKind, string> = {
@@ -39,6 +40,7 @@ const POI_RADIUS_PARAM: Record<PoiKind, string> = {
   fortress: "fortress_radius",
   resistance_node: "node_radius",
   build_site: "",   // no halo for pending sites — skipped in the halo pass
+  factory: "factory_radius",
 };
 
 interface AreaCircle {
@@ -341,6 +343,24 @@ export class Renderer {
         ctx.lineTo(tCenter.x, tCenter.y);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+    }
+
+    if (poi.kind === "factory") {
+      const targets = (poi.state.active_targets as [number, number][] | undefined) ?? [];
+      if (targets.length > 0) {
+        ctx.save();
+        ctx.strokeStyle = COLOR.enemyBorder;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        for (const [tq, tr] of targets) {
+          const tCenter = axialToPixel([tq, tr], this.layout);
+          ctx.beginPath();
+          ctx.moveTo(center.x, center.y);
+          ctx.lineTo(tCenter.x, tCenter.y);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
     }
   }
