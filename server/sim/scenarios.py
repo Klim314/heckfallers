@@ -8,12 +8,17 @@ Scenario JSON schema:
     {
       "name": "demo_planet",
       "cells": [                           # explicit form
-        {"q": 0, "r": 0, "ownership": "se" | "enemy" | "contested", "is_capital": false}
+        {"q": 0, "r": 0, "defender": "se" | "enemy", "is_capital": false}
       ],
       "ascii_grid": [                      # OR compact form: rows of chars
         "SSSEEE",                          # 'S'=SE, 'E'=Enemy, '.'=absent
         "SSSEEX"                           # 'C'=SE capital, 'X'=Enemy capital
       ],
+      "hex_disc": {                        # OR procedural giant-hexagon form
+        "radius": 5,                       # hex disc radius (cells)
+        "se_capital": [-5, 0],             # optional capital coords
+        "enemy_capital": [5, 0]
+      },
       "pois": [
         {"kind": "fob" | "artillery" | "fortress" | "resistance_node",
          "owner": "se" | "enemy",
@@ -22,9 +27,10 @@ Scenario JSON schema:
       "params": { ... optional overrides ... }
     }
 
-Contested cells are derived automatically: any SE/Enemy cell that
-borders the opposing faction is converted to Contested at load time, so
-scenario authors don't have to maintain the front line by hand.
+Active incursions are derived automatically: any cell that borders an
+opposing-defended cell gets its ``attacker`` set to the opposing
+faction at load time, so scenario authors don't have to maintain the
+front line by hand.
 """
 from __future__ import annotations
 
@@ -70,15 +76,17 @@ def load_scenario(world: "World", name: str) -> None:
         world.params = SimParams()
         world.params.update_from(data["params"])
 
-    if "ascii_grid" in data:
+    if "hex_disc" in data:
+        _load_hex_disc(world, data["hex_disc"])
+    elif "ascii_grid" in data:
         _load_ascii_grid(world, data["ascii_grid"])
     else:
         for c in data.get("cells", []):
             coord: Coord = (int(c["q"]), int(c["r"]))
-            ownership = Ownership(c.get("ownership", "se"))
+            defender = Ownership(c.get("defender", c.get("ownership", "se")))
             world.grid[coord] = Cell(
                 coord=coord,
-                ownership=ownership,
+                defender=defender,
                 is_capital=bool(c.get("is_capital", False)),
             )
 
@@ -93,7 +101,7 @@ def load_scenario(world: "World", name: str) -> None:
         )
 
 
-_ASCII_TO_OWNERSHIP = {
+_ASCII_TO_DEFENDER = {
     "S": (Ownership.SUPER_EARTH, False),
     "E": (Ownership.ENEMY, False),
     "C": (Ownership.SUPER_EARTH, True),
@@ -101,34 +109,63 @@ _ASCII_TO_OWNERSHIP = {
 }
 
 
+def _load_hex_disc(world: "World", config: dict) -> None:
+    """Procedurally generate a giant-hexagon grid.
+
+    Cells are split between SE (left) and Enemy (right) by the sign of
+    the pointy-top pixel-x discriminator ``2*q + r`` (cells with x<0 go
+    SE, x>0 go Enemy, x=0 splits by r so the dividing line alternates
+    cleanly down the middle).
+    """
+    radius = int(config["radius"])
+    se_capital = tuple(config["se_capital"]) if config.get("se_capital") else None
+    enemy_capital = tuple(config["enemy_capital"]) if config.get("enemy_capital") else None
+
+    for dq in range(-radius, radius + 1):
+        for dr in range(max(-radius, -dq - radius), min(radius, -dq + radius) + 1):
+            coord: Coord = (dq, dr)
+            disc = 2 * dq + dr
+            if disc < 0 or (disc == 0 and dr <= 0):
+                defender = Ownership.SUPER_EARTH
+            else:
+                defender = Ownership.ENEMY
+            is_capital = coord == se_capital or coord == enemy_capital
+            world.grid[coord] = Cell(
+                coord=coord,
+                defender=defender,
+                is_capital=is_capital,
+            )
+
+
 def _load_ascii_grid(world: "World", rows: list[str]) -> None:
     for r, row in enumerate(rows):
         for q, ch in enumerate(row):
             if ch == "." or ch == " ":
                 continue
-            entry = _ASCII_TO_OWNERSHIP.get(ch.upper())
+            entry = _ASCII_TO_DEFENDER.get(ch.upper())
             if entry is None:
                 raise ValueError(f"Unknown grid char {ch!r} at row={r} col={q}")
-            ownership, is_capital = entry
+            defender, is_capital = entry
             coord: Coord = (q, r)
             world.grid[coord] = Cell(
                 coord=coord,
-                ownership=ownership,
+                defender=defender,
                 is_capital=is_capital,
             )
 
 
 def _derive_front(world: "World") -> None:
-    """Convert SE/Enemy cells bordering the opposing faction to Contested."""
-    to_contest: list[Coord] = []
+    """Mark enemy-defended cells that border SE territory as under SE attack.
+
+    v1 is asymmetric: SE is the global attacker on this planet, enemy is the
+    defender. SE-defended border cells are NOT auto-contested — enemy doesn't
+    initiate incursions in this scenario. Mid-game flips can still create
+    enemy-attacker contestations via ``_flip_cell``."""
     for coord, cell in world.grid.items():
-        if cell.ownership == Ownership.CONTESTED:
+        if cell.defender != Ownership.ENEMY:
             continue
-        opposing = Ownership.ENEMY if cell.ownership == Ownership.SUPER_EARTH else Ownership.SUPER_EARTH
         for n in neighbors(coord):
             ncell = world.grid.get(n)
-            if ncell is not None and ncell.ownership == opposing:
-                to_contest.append(coord)
+            if ncell is not None and ncell.defender == Ownership.SUPER_EARTH:
+                cell.attacker = Ownership.SUPER_EARTH
                 break
-    for coord in to_contest:
-        world.grid[coord].ownership = Ownership.CONTESTED

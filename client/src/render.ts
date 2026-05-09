@@ -9,11 +9,12 @@ import type { CellState, PoiState, WorldStore } from "./state";
 
 const COLOR = {
   bg: "#07090d",
+  area: "#0c1018",
+  areaBorder: "#1d2733",
   se: "#1f4d80",
   seBorder: "#4aa3ff",
   enemy: "#7a1f1f",
   enemyBorder: "#ff5252",
-  contested: "#3a3320",
   contestedBorder: "#f0c43a",
   capital: "#ffffff",
   selection: "#ffffff",
@@ -36,10 +37,17 @@ const POI_RADIUS_PARAM: Record<PoiState["kind"], string> = {
   resistance_node: "node_radius",
 };
 
+interface AreaCircle {
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private layout: Layout = { size: 28, origin: { x: 0, y: 0 } };
   private layoutDirty = true;   // set when canvas resized or snapshot first arrives
+  private area: AreaCircle | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private store: WorldStore) {
     const ctx = canvas.getContext("2d");
@@ -89,35 +97,47 @@ export class Renderer {
     const h = this.canvas.clientHeight;
     if (!snap || snap.cells.length === 0) {
       this.layout.origin = { x: w / 2, y: h / 2 };
+      this.area = null;
       return;
     }
+
+    // Fit using cell vertices (not just centers) so the circumscribing
+    // boundary circle stays inside the canvas.
+    const baseSize = 28;
+    const tmp: Layout = { size: baseSize, origin: { x: 0, y: 0 } };
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const tmp: Layout = { size: this.layout.size, origin: { x: 0, y: 0 } };
     for (const c of snap.cells) {
-      const p = axialToPixel([c.q, c.r], tmp);
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
+      for (const p of hexCorners([c.q, c.r], tmp)) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
     }
-    const gridW = maxX - minX + this.layout.size * 2;
-    const gridH = maxY - minY + this.layout.size * 2;
-    const scale = Math.min(w / gridW, h / gridH, 1.0);
-    this.layout.size = 28 * scale;
-    // Recompute extents at new size
-    const tmp2: Layout = { size: this.layout.size, origin: { x: 0, y: 0 } };
-    let minX2 = Infinity, maxX2 = -Infinity, minY2 = Infinity, maxY2 = -Infinity;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    // Smallest enclosing circle — approximated by max vertex distance
+    // from the bbox centroid. Tight enough for symmetric hex layouts.
+    let maxR = 0;
     for (const c of snap.cells) {
-      const p = axialToPixel([c.q, c.r], tmp2);
-      if (p.x < minX2) minX2 = p.x;
-      if (p.x > maxX2) maxX2 = p.x;
-      if (p.y < minY2) minY2 = p.y;
-      if (p.y > maxY2) maxY2 = p.y;
+      for (const p of hexCorners([c.q, c.r], tmp)) {
+        const r = Math.hypot(p.x - cx, p.y - cy);
+        if (r > maxR) maxR = r;
+      }
     }
-    this.layout.origin = {
-      x: (w - (minX2 + maxX2)) / 2,
-      y: (h - (minY2 + maxY2)) / 2,
-    };
+
+    const margin = 12;
+    const areaPad = 1.1;            // boundary circle is ~10% larger than the hex
+    const paddedR = maxR * areaPad;
+    const scale = Math.min(
+      (w - margin * 2) / (2 * paddedR),
+      (h - margin * 2) / (2 * paddedR),
+      1.0,
+    );
+    this.layout.size = baseSize * scale;
+    this.layout.origin = { x: w / 2 - cx * scale, y: h / 2 - cy * scale };
+    this.area = { cx: w / 2, cy: h / 2, radius: paddedR * scale };
   }
 
   private render(): void {
@@ -133,6 +153,17 @@ export class Renderer {
     if (this.layoutDirty) {
       this.recenter();
       this.layoutDirty = false;
+    }
+
+    // Pass 0: draw the area-of-operation circle behind everything.
+    if (this.area) {
+      ctx.beginPath();
+      ctx.arc(this.area.cx, this.area.cy, this.area.radius, 0, Math.PI * 2);
+      ctx.fillStyle = COLOR.area;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COLOR.areaBorder;
+      ctx.stroke();
     }
 
     // Pass 1: draw POI effect halos (under cells but visible).
@@ -169,19 +200,19 @@ export class Renderer {
     }
     ctx.closePath();
 
-    let fill = COLOR.contested;
-    let stroke = COLOR.contestedBorder;
-    if (c.ownership === "se") { fill = COLOR.se; stroke = COLOR.seBorder; }
-    else if (c.ownership === "enemy") { fill = COLOR.enemy; stroke = COLOR.enemyBorder; }
+    // Fill always reflects the defender — yellow border conveys contestation.
+    const fill = c.defender === "se" ? COLOR.se : COLOR.enemy;
+    const factionStroke = c.defender === "se" ? COLOR.seBorder : COLOR.enemyBorder;
+    const isContested = c.attacker !== null;
+    const stroke = isContested ? COLOR.contestedBorder : factionStroke;
 
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.lineWidth = c.is_capital ? 2.5 : 1;
+    ctx.lineWidth = c.is_capital ? 2.5 : (isContested ? 2 : 1);
     ctx.strokeStyle = c.is_capital ? COLOR.capital : stroke;
     ctx.stroke();
 
-    // Contested cells get a horizontal progress fill (-100..+100 → red..blue).
-    if (c.ownership === "contested") {
+    if (isContested) {
       this.drawProgressBar([c.q, c.r], c.progress, c.diver_pressure, c.enemy_resistance);
     }
 

@@ -141,14 +141,17 @@ export class Controls {
     if (sel) {
       const cell = this.store.cellAt(sel);
       if (cell) {
+        const isContested = cell.attacker !== null;
+        const stateLine = isContested
+          ? `defender: ${cell.defender} (attacked by ${cell.attacker})`
+          : `held by: ${cell.defender}`;
         this.cellInfo.textContent =
           `(${cell.q}, ${cell.r})\n` +
-          `owner: ${cell.ownership}\n` +
+          `${stateLine}\n` +
           `progress: ${cell.progress.toFixed(1)}\n` +
           `pressure: ${cell.diver_pressure.toFixed(0)}\n` +
           `resistance: ${cell.enemy_resistance.toFixed(1)}` +
           (cell.is_capital ? "\n*capital*" : "");
-        const isContested = cell.ownership === "contested";
         this.pressureInput.disabled = !isContested;
         if (document.activeElement !== this.pressureInput) {
           const local = this.localPressure.get(coordKey(sel));
@@ -175,7 +178,7 @@ export class Controls {
       const arty = snap.pois.find((p) => p.kind === "artillery" && p.owner === "se");
       const cellAt = this.store.cellAt(sel);
       this.fireBtn.disabled = !arty || ((arty.state.shells as number | undefined) ?? 0) <= 0
-        || !cellAt || cellAt.ownership !== "contested";
+        || !cellAt || cellAt.attacker === null;
     } else {
       this.cellInfo.textContent = "click a hex";
       this.poiInfo.textContent = "click a POI";

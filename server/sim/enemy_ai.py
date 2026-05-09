@@ -54,7 +54,8 @@ def update_enemy_pressure(world: "World") -> None:
 def maybe_spawn_resistance_node(world: "World") -> None:
     candidates = []
     for cell in world.grid.values():
-        if cell.ownership not in (Ownership.ENEMY, Ownership.CONTESTED):
+        # Resistance nodes spawn on enemy-defended cells (contested or not).
+        if cell.defender != Ownership.ENEMY:
             continue
         if any(p.coord == cell.coord and p.kind == "resistance_node" for p in world.pois.values()):
             continue
@@ -81,7 +82,7 @@ def _local_friendly_pressure(world: "World", coord: Coord) -> float:
         nc = world.grid.get(n)
         if nc is None:
             continue
-        if nc.ownership == Ownership.SUPER_EARTH:
+        if nc.defender == Ownership.SUPER_EARTH:
             out += 1.0
         out += nc.diver_pressure * 0.25
     return out

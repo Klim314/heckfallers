@@ -34,6 +34,21 @@ class SimParams:
 
     flip_threshold: float = 100.0       # progress magnitude required to flip a cell
 
+    # Supply system. Defender uses BFS over same-faction cells from rooted
+    # sources (enemy capital + fortresses). Attacker uses local same-faction
+    # density plus FOB proximity. Supply only modulates contested-cell rates.
+    supply_floor: float = 0.3                # min effective supply factor (0..1)
+    supply_max_depth: int = 5                # BFS depth at which defender supply hits 0
+    attacker_density_radius: int = 2         # SE same-faction neighbor count radius
+    fob_supply_bonus: float = 0.4            # added to attacker supply within FOB radius
+
+    # Breakthrough: a flip cascades when the defender's supply was already
+    # weak or another flip just happened nearby. Effect is a temporary
+    # supply shock on defender-owned neighbors of the flipped cell.
+    breakthrough_supply_threshold: float = 0.4
+    breakthrough_window_s: float = 3.0
+    breakthrough_duration_s: float = 5.0
+
     def to_dict(self) -> dict:
         return asdict(self)
 

@@ -82,8 +82,6 @@ def make_router(world_ref: dict[str, World]) -> APIRouter:
             owner = Ownership(payload.owner)
         except ValueError:
             raise HTTPException(400, f"Invalid owner {payload.owner!r}.")
-        if owner == Ownership.CONTESTED:
-            raise HTTPException(400, "Owner cannot be 'contested'.")
         poi = w().place_poi(payload.kind, owner, payload.coord)  # type: ignore[arg-type]
         if poi is None:
             raise HTTPException(400, "POI placement not allowed at this cell.")

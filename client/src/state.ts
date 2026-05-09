@@ -2,16 +2,20 @@
 
 import type { Coord } from "./hex";
 
-export type Ownership = "se" | "enemy" | "contested";
+export type Faction = "se" | "enemy";
 
 export interface CellState {
   q: number;
   r: number;
-  ownership: Ownership;
+  defender: Faction;
+  attacker: Faction | null;
   progress: number;
   diver_pressure: number;
   enemy_resistance: number;
   is_capital: boolean;
+  enemy_supply: number;
+  se_supply: number;
+  supply_shock_until: number;
 }
 
 export interface PoiState {
