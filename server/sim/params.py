@@ -24,6 +24,7 @@ class SimParams:
     arty_buff: float = 12.0             # +rate during artillery effect
     arty_duration_s: float = 8.0        # seconds of effect per shell
     arty_default_shells: int = 5
+    arty_range: int = 3                 # max hex distance from artillery to firing target
 
     fortress_resist: float = 6.0        # added to enemy contribution within radius 3
     fortress_radius: int = 3
@@ -90,6 +91,38 @@ class SimParams:
     high_command_enabled: bool = False           # off by default until later phases land
     high_command_period_ticks: int = 100         # ~20s at 5Hz — strategic cadence
     requisition_per_tick: float = 0.5            # smooth accrual rate of the build pool
+
+    # FOB siting (Phase 2). Cost scales as base * (n+1)^exponent over the
+    # current SE FOB count; with base=50, exponent=2, requisition_per_tick=0.5
+    # the first FOB lands ~tick 100, second ~tick 500, third ~tick 1400 —
+    # softly capping the count and rewarding coverage gains over count.
+    fob_base_cost: float = 50.0
+    fob_cost_exponent: float = 2.0
+    fob_min_coverage_threshold: int = 1          # min uncovered contested cells in reach to bother placing
+
+    # Artillery siting (Phase 3). Same shape as FOB siting but parameterized
+    # over arty_range and a steeper cost base — artillery is heavier infra
+    # and the soft cap should land at fewer total emplacements than FOBs.
+    arty_base_cost: float = 100.0
+    arty_cost_exponent: float = 2.0
+    arty_min_coverage_threshold: int = 1
+
+    # Build site duration (Phase 4a). Fresh FOB / artillery placements
+    # route through a build_site POI that resolves to the real structure
+    # after this many ticks. During the wait the site provides no buff
+    # and is destroyable by an enemy flip.
+    fresh_build_ticks: int = 75              # ~15s at 5Hz
+
+    # Decommission + move (Phase 4b). The planner relocates structures by
+    # tearing down the source and placing a build site at the destination
+    # with a shorter ``move_build_ticks`` window — moves are *faster* than
+    # fresh builds because the materiel was already constructed. Stale
+    # POIs (zero individual coverage for N consecutive strategic ticks)
+    # decommission for free, returning the slot to the cost curve.
+    decommission_stale_ticks: int = 3        # ~60s at default cadence
+    move_build_ticks: int = 25               # ~5s at 5Hz
+    fob_move_cost: float = 25.0              # half of fob_base_cost
+    arty_move_cost: float = 50.0             # half of arty_base_cost
 
     def to_dict(self) -> dict:
         return asdict(self)

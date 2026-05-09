@@ -20,5 +20,7 @@ def world_to_wire(world: "World") -> dict:
         "pois": [p.to_wire() for p in world.pois.values()],
         "salients": [s.to_wire() for s in world.salients.values()],
         "controller": getattr(world.controller, "name", "unknown"),
+        "se_controller": getattr(world.se_controller, "name", "unknown"),
+        "requisition": round(getattr(world.se_controller, "requisition", 0.0), 2),
         "match_events": list(world.match_events),
     }

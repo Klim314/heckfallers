@@ -24,6 +24,7 @@ class EnemyController(Protocol):
         ...
 
 
+from .high_command import HighCommandController  # noqa: E402
 from .opportunistic import OpportunisticController  # noqa: E402
 
-__all__ = ["EnemyController", "OpportunisticController"]
+__all__ = ["EnemyController", "HighCommandController", "OpportunisticController"]

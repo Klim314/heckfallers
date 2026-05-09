@@ -1,16 +1,22 @@
 {
   "name": "demo_planet",
-  "ascii_grid": [
-    "SSSSSSEEEEEE",
-    "SSSSSSEEEEEE",
-    "SSSSSSEEEEXE",
-    "SSSSSSEEEEEE",
-    "SSSSSSEEEEEE"
-  ],
+  "hex_disc": {
+    "radius": 5,
+    "enemy_capital": [5, 0]
+  },
   "pois": [
-    {"kind": "fob",       "owner": "se",    "q": 3,  "r": 1},
-    {"kind": "fob",       "owner": "se",    "q": 3,  "r": 3},
-    {"kind": "artillery", "owner": "se",    "q": 1,  "r": 2},
-    {"kind": "fortress",  "owner": "enemy", "q": 9,  "r": 2}
-  ]
+    {"kind": "fob",       "owner": "se",    "q": -3, "r":  1},
+    {"kind": "fob",       "owner": "se",    "q": -3, "r": -1},
+    {"kind": "artillery", "owner": "se",    "q": -2, "r":  0},
+    {"kind": "fortress",  "owner": "enemy", "q":  3, "r":  0}
+  ],
+  "params": {
+    "high_command_enabled": true,
+    "requisition_per_tick": 2.0,
+    "fresh_build_ticks": 50,
+    "move_build_ticks": 20,
+    "fob_base_cost": 30,
+    "arty_base_cost": 60,
+    "decommission_stale_ticks": 2
+  }
 }

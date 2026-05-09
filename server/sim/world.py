@@ -22,6 +22,11 @@ def _default_controller():
     return OpportunisticController()
 
 
+def _default_se_controller():
+    from .controllers import HighCommandController
+    return HighCommandController()
+
+
 @dataclass
 class World:
     grid: dict[Coord, Cell] = field(default_factory=dict)
@@ -60,9 +65,17 @@ class World:
             from .se_ai import allocate_divers
             allocate_divers(self)
 
+        # SE high command runs after the diver allocator so its placements
+        # take effect before pressure resolves this tick. Cadence-gated
+        # internally; defaults to a no-op until enabled in params.
+        self.se_controller.tick(self)
+
         self._stamp_artillery_shock()
         self._apply_pressure(dt)
         self._resolve_flips()
+        # Resolve any build sites whose timer has elapsed (and that
+        # survived the flip pass above) into their target POI kind.
+        self._resolve_build_sites()
         # Controller owns enemy decisions (tactical resistance + node spawn +
         # strategic salient spawning). Salient mechanics (lifetime, success
         # detection) run unconditionally regardless of which controller is in.
@@ -122,6 +135,30 @@ class World:
             attacker_favor = cell.progress if cell.attacker == Ownership.SUPER_EARTH else -cell.progress
             if attacker_favor > params.active_progress_epsilon:
                 cell.active_until_tick = self.tick + int(params.active_latch_s * params.tick_hz)
+
+    def _resolve_build_sites(self) -> None:
+        """Resolve any build_site POI whose ``completes_at`` has elapsed
+        into its target kind, mutating in place so the POI id stays stable
+        for client tracking. Triggers a supply recompute since FOBs change
+        attacker supply via fob_supply_bonus."""
+        for poi in self.pois.values():
+            if poi.kind != "build_site":
+                continue
+            if self.tick < poi.state.get("completes_at", 0):
+                continue
+            target_kind = poi.state.get("target_kind")
+            if target_kind is None:
+                continue
+            poi.kind = target_kind
+            if target_kind == "artillery":
+                poi.state = {
+                    "shells": self.params.arty_default_shells,
+                    "target": None,
+                    "expires_at": -1,
+                }
+            else:
+                poi.state = {}
+            self._supply_dirty = True
 
     def _stamp_artillery_shock(self) -> None:
         """While an artillery effect is active, force its target cell's
@@ -300,6 +337,48 @@ class World:
         self._supply_dirty = True
         return poi
 
+    def place_build_site(
+        self,
+        target_kind: PoiKind,
+        owner: Ownership,
+        coord: Coord,
+        duration_ticks: int | None = None,
+    ) -> POI | None:
+        """Create a pending build site that resolves to ``target_kind`` after
+        ``duration_ticks`` ticks. Used for SE FOB / artillery placement —
+        fresh builds and (Phase 4b) moves both route through this so the
+        construction window is exposed to enemy interruption.
+
+        Placement is permitted on cells where the *target* kind would be
+        permitted; the build site itself is owner-tagged SE so the
+        flip-cell teardown logic destroys it if the cell flips to enemy.
+        """
+        cell = self.grid.get(coord)
+        if cell is None:
+            return None
+        if not self._poi_placement_allowed(target_kind, owner, cell):
+            return None
+
+        pid = f"poi_{self._next_poi_id}"
+        self._next_poi_id += 1
+
+        if duration_ticks is None:
+            duration_ticks = self.params.fresh_build_ticks
+        completes_at = self.tick + max(0, duration_ticks)
+
+        poi = POI(
+            id=pid,
+            kind="build_site",
+            owner=owner,
+            coord=coord,
+            state={"target_kind": target_kind, "completes_at": completes_at},
+        )
+        self.pois[pid] = poi
+        # Build sites don't change supply (no effect_on contribution), but a
+        # later resolution will. Leave _supply_dirty alone here; the resolve
+        # phase sets it.
+        return poi
+
     def remove_poi(self, poi_id: str) -> bool:
         removed = self.pois.pop(poi_id, None) is not None
         if removed:
@@ -313,6 +392,10 @@ class World:
         if self.grid.get(target) is None:
             return False
         if poi.state.get("shells", 0) <= 0:
+            return False
+        # Clamp the user-tunable param: negative values would silently brick
+        # all firing (distance is always >= 0), zero allows only self-fire.
+        if distance(poi.coord, target) > max(0, self.params.arty_range):
             return False
         poi.state["shells"] -= 1
         poi.state["target"] = list(target)
@@ -331,6 +414,10 @@ class World:
         self.salients.clear()
         self.match_events.clear()
         self._next_salient_id = 1
+        # Re-instantiate controllers so any accrued state (requisition,
+        # cooldowns) doesn't leak between matches.
+        self.controller = _default_controller()
+        self.se_controller = _default_se_controller()
 
     # ------------------------------------------------------------------ #
     # Helpers

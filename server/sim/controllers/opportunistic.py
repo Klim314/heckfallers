@@ -25,11 +25,19 @@ if TYPE_CHECKING:
 
 # Per-POI value weight for strike prioritization. Artillery is more
 # disruptive to lose than a FOB (one shell can decide a flip), so it
-# scores higher.
+# scores higher. Build sites are valued at their target kind — an
+# in-progress artillery build is just as enticing as a finished one.
 _POI_VALUE: dict[str, float] = {
     "artillery": 1.0,
     "fob": 0.7,
 }
+
+
+def _value_of(poi) -> float:
+    if poi.kind == "build_site":
+        target = poi.state.get("target_kind")
+        return _POI_VALUE.get(target, 0.0)
+    return _POI_VALUE.get(poi.kind, 0.0)
 
 
 class OpportunisticController:
@@ -63,7 +71,7 @@ class OpportunisticController:
         for pid, poi in world.pois.items():
             if poi.owner != Ownership.SUPER_EARTH:
                 continue
-            value = _POI_VALUE.get(poi.kind, 0.0)
+            value = _value_of(poi)
             if value == 0.0:
                 continue
             if pid in targeted:

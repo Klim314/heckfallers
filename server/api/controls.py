@@ -82,7 +82,14 @@ def make_router(world_ref: dict[str, World]) -> APIRouter:
             owner = Ownership(payload.owner)
         except ValueError:
             raise HTTPException(400, f"Invalid owner {payload.owner!r}.")
-        poi = w().place_poi(payload.kind, owner, payload.coord)  # type: ignore[arg-type]
+        # SE FOB / artillery placements route through a build site that
+        # resolves after fresh_build_ticks. Fortress and resistance_node
+        # (enemy infra) stay instant — the build-site abstraction is
+        # specifically for SE construction.
+        if payload.kind in ("fob", "artillery"):
+            poi = w().place_build_site(payload.kind, owner, payload.coord)  # type: ignore[arg-type]
+        else:
+            poi = w().place_poi(payload.kind, owner, payload.coord)  # type: ignore[arg-type]
         if poi is None:
             raise HTTPException(400, "POI placement not allowed at this cell.")
         return {"ok": True, "poi": poi.to_wire()}
@@ -98,7 +105,7 @@ def make_router(world_ref: dict[str, World]) -> APIRouter:
     def fire_artillery(payload: FireArtyPayload) -> dict:
         ok = w().fire_artillery(payload.poi_id, payload.target)
         if not ok:
-            raise HTTPException(400, "Cannot fire artillery (no shells, bad target, or wrong POI).")
+            raise HTTPException(400, "Cannot fire artillery (no shells, target out of range, bad target, or wrong POI).")
         return {"ok": True}
 
     @router.post("/params")

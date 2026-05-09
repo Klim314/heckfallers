@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from .world import World
 
 
-PoiKind = Literal["fob", "artillery", "fortress", "resistance_node"]
+PoiKind = Literal["fob", "artillery", "fortress", "resistance_node", "build_site"]
 
 
 @dataclass
@@ -55,6 +55,10 @@ class POI:
 
         if self.kind == "resistance_node":
             return params.node_resist if d <= params.node_radius else 0.0
+
+        if self.kind == "build_site":
+            # Build sites are visible placeholders, not active infrastructure.
+            return 0.0
 
         return 0.0
 
