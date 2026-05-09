@@ -11,6 +11,7 @@ export interface CellState {
   attacker: Faction | null;
   progress: number;
   diver_pressure: number;
+  diver_pin: boolean;
   enemy_resistance: number;
   is_capital: boolean;
   enemy_supply: number;

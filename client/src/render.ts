@@ -216,6 +216,14 @@ export class Renderer {
       this.drawProgressBar([c.q, c.r], c.progress, c.diver_pressure, c.enemy_resistance);
     }
 
+    if (c.diver_pin) {
+      const center = axialToPixel([c.q, c.r], this.layout);
+      ctx.fillStyle = COLOR.capital;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y - this.layout.size * 0.55, this.layout.size * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     if (c.is_capital) {
       const center = axialToPixel([c.q, c.r], this.layout);
       ctx.fillStyle = COLOR.capital;

@@ -43,6 +43,10 @@ class World:
             supply_mod.recompute_all(self)
             self._supply_dirty = False
 
+        if self.tick % self.params.allocation_period_ticks == 0:
+            from .se_ai import allocate_divers
+            allocate_divers(self)
+
         self._stamp_artillery_shock()
         self._apply_pressure(dt)
         self._resolve_flips()
@@ -145,6 +149,7 @@ class World:
         cell.attacker = None
         cell.progress = 0.0
         cell.diver_pressure = 0.0
+        cell.diver_pin = False
         cell.enemy_resistance = 0.0
 
         # Destroy POIs on this cell whose owner is opposite to the new defender.
@@ -223,7 +228,11 @@ class World:
         cell = self.grid.get(coord)
         if cell is None or cell.attacker is None:
             return False
-        cell.diver_pressure = max(0.0, pressure)
+        v = max(0.0, pressure)
+        cell.diver_pressure = v
+        # Slider value doubles as the pin signal: any positive value pins the
+        # cell (diver AI leaves it alone), 0 releases it back to the allocator.
+        cell.diver_pin = v > 0.0
         return True
 
     def place_poi(self, kind: PoiKind, owner: Ownership, coord: Coord) -> POI | None:

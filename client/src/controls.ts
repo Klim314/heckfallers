@@ -149,7 +149,7 @@ export class Controls {
           `(${cell.q}, ${cell.r})\n` +
           `${stateLine}\n` +
           `progress: ${cell.progress.toFixed(1)}\n` +
-          `pressure: ${cell.diver_pressure.toFixed(0)}\n` +
+          `pressure: ${cell.diver_pressure.toFixed(0)}${cell.diver_pin ? " (pinned)" : ""}\n` +
           `resistance: ${cell.enemy_resistance.toFixed(1)}` +
           (cell.is_capital ? "\n*capital*" : "");
         this.pressureInput.disabled = !isContested;

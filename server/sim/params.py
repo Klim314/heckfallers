@@ -49,6 +49,16 @@ class SimParams:
     breakthrough_window_s: float = 3.0
     breakthrough_duration_s: float = 5.0
 
+    # SE diver allocation. The diver pool is a constant abstraction of
+    # playerbase size; each allocation pass distributes it over contested
+    # SE-attacker cells via softmax(utility / temperature). User-pinned
+    # cells (set via the controller pressure slider) consume from the pool
+    # first; their value is preserved until the cell flips or the user
+    # releases by setting pressure back to 0.
+    diver_pool: float = 1500.0                   # total SE force distributed each allocation pass
+    allocation_period_ticks: int = 5             # ~1s at 5Hz
+    allocation_temperature: float = 1.0          # low=concentrate, high=spread
+
     def to_dict(self) -> dict:
         return asdict(self)
 

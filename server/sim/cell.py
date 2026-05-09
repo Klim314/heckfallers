@@ -29,7 +29,8 @@ class Cell:
     defender: Ownership
     attacker: Ownership | None = None
     progress: float = 0.0           # signed; +→SE direction, -→Enemy direction
-    diver_pressure: float = 0.0     # set by controllers / players
+    diver_pressure: float = 0.0     # set by SE diver AI; overridden by user pin
+    diver_pin: bool = False         # user has manually pinned this cell's pressure; AI skips it until flip or release
     enemy_resistance: float = 0.0   # set by enemy AI each tick
     is_capital: bool = False
     enemy_supply: float = 1.0       # BFS from enemy capital + fortress sources
@@ -48,6 +49,7 @@ class Cell:
             "attacker": self.attacker.value if self.attacker is not None else None,
             "progress": round(self.progress, 2),
             "diver_pressure": round(self.diver_pressure, 2),
+            "diver_pin": self.diver_pin,
             "enemy_resistance": round(self.enemy_resistance, 2),
             "is_capital": self.is_capital,
             "enemy_supply": round(self.enemy_supply, 2),
