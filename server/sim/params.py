@@ -70,6 +70,7 @@ class SimParams:
     diver_pool: float = 1500.0                   # total SE force distributed each allocation pass
     allocation_period_ticks: int = 5             # ~1s at 5Hz
     allocation_temperature: float = 1.0          # low=concentrate, high=spread
+    diver_supply_max_hops: int = 2               # contested cells beyond this hex-distance from any SE-held cell are cut off
 
     def to_dict(self) -> dict:
         return asdict(self)

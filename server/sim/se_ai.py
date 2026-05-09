@@ -22,7 +22,7 @@ import math
 from typing import TYPE_CHECKING
 
 from .cell import Cell, Ownership
-from .grid import neighbors
+from .grid import cells_within, neighbors
 
 if TYPE_CHECKING:
     from .world import World
@@ -35,8 +35,28 @@ def allocate_divers(world: "World") -> None:
         return
 
     params = world.params
-    pinned = [c for c in targets if c.diver_pin]
-    free_cells = [c for c in targets if not c.diver_pin]
+
+    # Cut-off filter: a contested cell can only be reinforced if some held
+    # SE-defended cell sits within `diver_supply_max_hops`. Beyond that the
+    # cell is isolated — divers can't reach it. Force pressure to 0 and
+    # release any stale pin so a future re-link doesn't carry phantom intent.
+    se_held = {c.coord for c in world.grid.values()
+               if c.defender == Ownership.SUPER_EARTH and c.attacker is None}
+    max_hops = max(0, params.diver_supply_max_hops)
+
+    reachable: list[Cell] = []
+    for cell in targets:
+        if _within_hops(cell.coord, se_held, max_hops):
+            reachable.append(cell)
+        else:
+            cell.diver_pressure = 0.0
+            cell.diver_pin = False
+
+    if not reachable:
+        return
+
+    pinned = [c for c in reachable if c.diver_pin and c.diver_pressure > 0.0]
+    free_cells = [c for c in reachable if c not in pinned]
 
     pinned_sum = sum(c.diver_pressure for c in pinned)
     free = max(0.0, params.diver_pool - pinned_sum)
@@ -54,6 +74,13 @@ def allocate_divers(world: "World") -> None:
     probs = _softmax(utilities, params.allocation_temperature)
     for cell, p in zip(free_cells, probs):
         cell.diver_pressure = free * p
+
+
+def _within_hops(coord, se_held: set, max_hops: int) -> bool:
+    for c in cells_within(coord, max_hops):
+        if c in se_held:
+            return True
+    return False
 
 
 def _utility(world: "World", cell: Cell) -> float:
