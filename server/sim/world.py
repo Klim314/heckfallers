@@ -7,7 +7,7 @@ from typing import Literal
 from .cell import Cell, Ownership
 from .events import emit
 from .grid import Coord, distance, neighbors
-from .params import SimParams
+from .params import SimParams, effective_diver_pressure
 from .poi import POI, PoiKind
 from .salient import Salient
 from . import salient as salient_mod
@@ -131,20 +131,43 @@ class World:
             # base_rate stays SE-favored (Helldivers framing: SE is always the
             # global attacker on this planet). Enemy-attacker cells naturally
             # stall at progress=0 unless enemy AI actively pushes them.
-            rate = params.base_rate
-            rate += cell.diver_pressure * params.pressure_coefficient * se_factor
-            rate -= cell.salient_pressure * params.pressure_coefficient * en_factor
-            rate -= cell.factory_pressure * params.pressure_coefficient * en_factor
-            rate -= cell.enemy_resistance * en_factor
-
+            #
+            # Pressure resolves in three buckets, all in *rate-units*:
+            #   resistance_rate  = enemy contributions (linear, coordinated AI)
+            #   friendly_force   = SE POI contributions (linear, coordinated infrastructure)
+            #   raw_diver_rate   = diver_pressure × coefficient × se_factor
+            #                      (subject to the uncoordinated-mob transform,
+            #                       gated by `resistance_rate + base_headroom`)
+            resistance_rate = (
+                cell.salient_pressure * params.pressure_coefficient * en_factor
+                + cell.factory_pressure * params.pressure_coefficient * en_factor
+                + cell.enemy_resistance * en_factor
+            )
+            friendly_force = 0.0
             for poi in self.pois.values():
                 contribution = poi.effect_on(cell, self)
                 if contribution == 0.0:
                     continue
                 if poi.owner == Ownership.SUPER_EARTH:
-                    rate += contribution
+                    friendly_force += contribution
                 else:
-                    rate -= contribution
+                    resistance_rate += contribution
+
+            raw_diver_rate = cell.diver_pressure * params.pressure_coefficient * se_factor
+            effective_diver_rate = effective_diver_pressure(
+                raw_diver_rate,
+                resistance_rate,
+                params.diver_base_headroom,
+                params.diver_excess_factor,
+                params.diver_excess_alpha,
+            )
+
+            rate = (
+                params.base_rate
+                + effective_diver_rate
+                + friendly_force
+                - resistance_rate
+            )
 
             cell.progress += rate * dt
             cap = self._effective_threshold(cell) * 1.5

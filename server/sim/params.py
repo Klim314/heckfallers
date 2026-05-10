@@ -14,6 +14,20 @@ class SimParams:
     tick_hz: float = 5.0                # sim ticks per second
     base_rate: float = 0.5              # baseline progress per second on a contested cell
     pressure_coefficient: float = 0.05  # progress per (pressure-unit * second)
+    # Asymmetric "uncoordinated mob" pressure model. Divers are an
+    # uncoordinated player mob; enemy contributions (salient_pressure,
+    # factory_pressure, enemy_resistance, enemy POIs) represent a
+    # coordinated AI assault and stay linear. The mob penalty on divers is
+    # *resistance-aware*: divers can stack to match a real threat without
+    # penalty — that's what they should do. Beyond `resistance + base_headroom`,
+    # marginal divers get in each other's way and contribute less. All
+    # values below are in *rate-units* (i.e., already multiplied through
+    # pressure_coefficient + supply factors), so they combine directly
+    # with the rate produced by enemy contributions in _apply_pressure.
+    # See effective_diver_pressure() below.
+    diver_base_headroom: float = 5.0     # always-linear zone above resistance (rate units)
+    diver_excess_factor: float = 0.3     # marginal returns beyond (resistance + headroom)
+    diver_excess_alpha: float = 1.0      # 1.0 = piecewise-linear; <1.0 = power-law diminishing on excess
     enemy_resistance_base: float = 6.0  # defender resistance magnitude per contested cell; supply-modulated at apply
     enemy_ai_period_ticks: int = 5      # enemy AI runs every N ticks
     enemy_spawn_period_ticks: int = 50  # resistance-node spawn cadence
@@ -208,3 +222,47 @@ class SimParams:
         for k, v in partial.items():
             if hasattr(self, k):
                 setattr(self, k, type(getattr(self, k))(v))
+
+
+def effective_diver_pressure(
+    raw: float,
+    resistance: float,
+    base_headroom: float,
+    excess_factor: float,
+    excess_alpha: float = 1.0,
+) -> float:
+    """Asymmetric 'uncoordinated mob' transform on diver force at one cell.
+
+    All inputs are in rate-units (post pressure_coefficient + supply
+    factor). The threshold up to which divers act linearly is::
+
+        threshold = base_headroom + resistance
+
+    Below the threshold, divers contribute 1:1 — they're either fighting
+    small skirmishes (resistance ≈ 0) or matching real threats. Above the
+    threshold, marginal divers face mob inefficiency.
+
+    Curve shape is tunable:
+    - ``excess_alpha == 1.0``: piecewise-linear. Each unit of excess returns
+      ``excess_factor`` (e.g. 0.3 = 30%). Continuous at threshold; slope
+      drops from 1.0 to ``excess_factor``.
+    - ``excess_alpha < 1.0``: power-law. Marginal returns themselves
+      diminish — each new diver helps less than the previous one. Curve is
+      anchored to match the linear branch at excess == threshold, so small
+      values of alpha apply the heaviest penalty far above threshold.
+
+    Resistance-aware design: passing in the cell's *current* resistance
+    means a high-resistance zone (fortress, conquer wedge cells, destroy
+    corridor) lifts the threshold proportionally — divers can stack
+    against it without the mob penalty kicking in.
+    """
+    threshold = base_headroom + resistance
+    if raw <= threshold:
+        return raw
+    excess = raw - threshold
+    if excess_alpha >= 1.0:
+        return threshold + excess_factor * excess
+    # Power-law: matches the linear formula at excess == threshold and
+    # falls below it for excess > threshold (heavier penalty for runaway
+    # over-stacking).
+    return threshold + excess_factor * threshold * ((excess / threshold) ** excess_alpha)
