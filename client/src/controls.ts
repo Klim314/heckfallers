@@ -2,6 +2,7 @@
 // world-state updates back into the panel.
 
 import { coordKey, distance, type Coord } from "./hex";
+import { renderParamsPanel } from "./params_panel";
 import { postControl, type PoiKind, type PoiState, type WorldStore } from "./state";
 
 export class Controls {
@@ -82,14 +83,28 @@ export class Controls {
       this.store.ui.selectedPoiId = null;
     });
 
-    document.querySelectorAll<HTMLInputElement>("[data-param]").forEach((input) => {
-      input.addEventListener("input", () => {
-        const param = input.dataset.param!;
-        const v = parseFloat(input.value);
-        const display = document.querySelector(`[data-show="${param}"]`);
-        if (display) display.textContent = String(v);
-        postControl("/control/params", { params: { [param]: v } }).catch(console.error);
+    const paramsBody = document.getElementById("params-body");
+    if (paramsBody) renderParamsPanel(paramsBody);
+
+    const paramsToggle = document.getElementById("btn-params-toggle") as HTMLButtonElement | null;
+    if (paramsToggle && paramsBody) {
+      paramsToggle.addEventListener("click", () => {
+        const open = paramsBody.classList.toggle("hidden") === false;
+        paramsToggle.setAttribute("aria-expanded", String(open));
+        paramsToggle.textContent = open ? "hide" : "show";
       });
+    }
+
+    document.querySelectorAll<HTMLInputElement>("[data-param]").forEach((input) => {
+      const handler = () => {
+        const param = input.dataset.param!;
+        const isBool = input.type === "checkbox";
+        const v: number | boolean = isBool ? input.checked : parseFloat(input.value);
+        const display = document.querySelector(`[data-show="${param}"]`);
+        if (display) display.textContent = isBool ? (v ? "on" : "off") : String(v);
+        postControl("/control/params", { params: { [param]: isBool ? (v ? 1 : 0) : v } }).catch(console.error);
+      };
+      input.addEventListener(input.type === "checkbox" ? "change" : "input", handler);
     });
 
     this.store.subscribe(() => this.refresh());
@@ -127,7 +142,13 @@ export class Controls {
     document.querySelectorAll<HTMLInputElement>("[data-param]").forEach((input) => {
       const param = input.dataset.param!;
       const val = snap.params[param];
-      if (typeof val === "number" && document.activeElement !== input) {
+      if (document.activeElement === input) return;
+      if (input.type === "checkbox") {
+        const on = !!val;
+        input.checked = on;
+        const display = document.querySelector(`[data-show="${param}"]`);
+        if (display) display.textContent = on ? "on" : "off";
+      } else if (typeof val === "number") {
         input.value = String(val);
         const display = document.querySelector(`[data-show="${param}"]`);
         if (display) display.textContent = String(val);

@@ -57,38 +57,12 @@
           </div>
         </section>
 
-        <section class="panel">
-          <h3>Globals</h3>
-          <div class="row">
-            <label title="baseline progress per second on contested cells">Base rate</label>
-            <input type="range" data-param="base_rate" min="0" max="3" step="0.1" value="0.5" />
-            <span data-show="base_rate">0.5</span>
+        <section class="panel params-panel">
+          <div class="panel-head">
+            <h3>Parameters</h3>
+            <button id="btn-params-toggle" class="panel-toggle" aria-expanded="false" aria-controls="params-body">show</button>
           </div>
-          <div class="row">
-            <label title="progress per (pressure-unit * second)">Pressure coef</label>
-            <input type="range" data-param="pressure_coefficient" min="0.01" max="0.2" step="0.01" value="0.05" />
-            <span data-show="pressure_coefficient">0.05</span>
-          </div>
-          <div class="row">
-            <label title="defender resistance magnitude per contested cell (supply-scaled at apply)">Enemy resistance</label>
-            <input type="range" data-param="enemy_resistance_base" min="0" max="20" step="0.5" value="6" />
-            <span data-show="enemy_resistance_base">6</span>
-          </div>
-          <div class="row">
-            <label title="total SE force the diver AI distributes across contested cells each allocation pass">Diver pool</label>
-            <input type="range" data-param="diver_pool" min="0" max="3000" step="50" value="1500" />
-            <span data-show="diver_pool">1500</span>
-          </div>
-          <div class="row">
-            <label title="softmax temperature; low concentrates divers on top targets, high spreads them across the front">Allocation temp</label>
-            <input type="range" data-param="allocation_temperature" min="0.2" max="3" step="0.1" value="1" />
-            <span data-show="allocation_temperature">1</span>
-          </div>
-          <div class="row">
-            <label title="ticks between factory placement attempts; at default tick_hz=5 each tick is 0.2s">Factory period</label>
-            <input type="range" data-param="factory_period_ticks" min="10" max="500" step="10" value="50" />
-            <span data-show="factory_period_ticks">50</span>
-          </div>
+          <div id="params-body" class="params-body hidden"></div>
         </section>
 
         <section class="panel">
