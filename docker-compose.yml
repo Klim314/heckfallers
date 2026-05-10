@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8800:8800"
+    volumes:
+      - ./server:/app/server
+    environment:
+      # Force polling — bind mounts on Windows/WSL2 don't deliver inotify events reliably.
+      WATCHFILES_FORCE_POLLING: "true"
+      HEXA_HOST: "0.0.0.0"
+      HEXA_PORT: "8800"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "5273:5273"
+    volumes:
+      - ./client:/app
+      # Anonymous volume shadows host node_modules so the Linux install survives.
+      - /app/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      HEXA_PROXY_TARGET: "http://server:8800"
+    depends_on:
+      - server
