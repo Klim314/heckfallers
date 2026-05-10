@@ -21,7 +21,7 @@ from server.sim import salient as salient_mod
 from server.sim.cell import Cell, Ownership
 from server.sim.world import World
 
-from .conftest import make_world
+from .conftest import make_world, pin_deterministic_allocation
 
 
 def _hex_world(qs: int = 9, rs: int = 5) -> World:
@@ -32,6 +32,7 @@ def _hex_world(qs: int = 9, rs: int = 5) -> World:
     enemy front so make_world-style helpers behave.
     """
     w = World()
+    pin_deterministic_allocation(w)
     for q in range(qs):
         for r in range(rs):
             defender = Ownership.ENEMY if q == qs - 1 else Ownership.SUPER_EARTH

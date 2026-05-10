@@ -7,7 +7,7 @@ from server.sim import factory as factory_mod
 from server.sim.cell import Cell, Ownership
 from server.sim.world import World
 
-from .conftest import make_world
+from .conftest import make_world, pin_deterministic_allocation
 
 
 def _wider_strip(width: int = 8, enemy_from: int = 5) -> World:
@@ -18,6 +18,7 @@ def _wider_strip(width: int = 8, enemy_from: int = 5) -> World:
     place factories with stable neighborhoods.
     """
     w = World()
+    pin_deterministic_allocation(w)
     for q in range(width):
         defender = Ownership.ENEMY if q >= enemy_from else Ownership.SUPER_EARTH
         is_capital = q == width - 1
@@ -132,6 +133,7 @@ def test_tick_factories_prefers_in_progress_target():
     # Build a fatter map: 3-row strip so a factory at (5,0) sees both (4,0)
     # and (4,1) as candidates within radius.
     w = World()
+    pin_deterministic_allocation(w)
     for q in range(8):
         for r in range(2):
             defender = Ownership.ENEMY if q >= 5 else Ownership.SUPER_EARTH

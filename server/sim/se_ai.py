@@ -32,6 +32,7 @@ support) per the design doc, but v1 collapses everything into one pool.
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING
 
 from .cell import Cell, Ownership
@@ -85,7 +86,12 @@ def allocate_divers(world: "World") -> None:
     free_cells = [c for c in reachable if c not in pinned]
 
     pinned_sum = sum(c.diver_pressure for c in pinned)
+    # Pin is a hard guarantee — apply pool jitter only to the discretionary
+    # remainder so manual-controller commitments stay stable.
     free = max(0.0, params.diver_pool - pinned_sum)
+    pool_sigma = params.allocation_pool_jitter_sigma
+    if pool_sigma > 0.0:
+        free *= math.exp(random.gauss(0.0, pool_sigma))
 
     if not free_cells:
         return
@@ -96,10 +102,39 @@ def allocate_divers(world: "World") -> None:
             c.diver_pressure = 0.0
         return
 
+    temp = params.allocation_temperature
+    temp_jitter = params.allocation_temperature_jitter
+    if temp_jitter > 0.0:
+        temp = max(0.05, temp + random.uniform(-temp_jitter / 2.0, temp_jitter / 2.0))
+
     utilities = [_utility(world, c) for c in free_cells]
-    probs = _softmax(utilities, params.allocation_temperature)
-    for cell, p in zip(free_cells, probs):
-        cell.diver_pressure = free * p
+    probs = _softmax(utilities, temp)
+
+    chunk_count = params.allocation_chunk_count
+    if chunk_count > 1:
+        # Multinomial: each chunk is one "deployment wave" sampled from the
+        # softmax distribution. Variance ≈ K * p * (1-p) per cell, which is
+        # the main source of bursts that the retaliation gauge needs.
+        chunk_size = free / chunk_count
+        counts = [0] * len(free_cells)
+        cumulative = []
+        run = 0.0
+        for p in probs:
+            run += p
+            cumulative.append(run)
+        for _ in range(chunk_count):
+            r = random.random()
+            for i, c_prob in enumerate(cumulative):
+                if r < c_prob:
+                    counts[i] += 1
+                    break
+            else:
+                counts[-1] += 1
+        for cell, c in zip(free_cells, counts):
+            cell.diver_pressure = c * chunk_size
+    else:
+        for cell, p in zip(free_cells, probs):
+            cell.diver_pressure = free * p
 
 
 def _open_new_fronts(world: "World") -> list[Cell]:

@@ -80,7 +80,13 @@ class SimParams:
     # progress fires retaliation; steady-state grind balances against
     # decay and never triggers. Floor at 0 — enemy progress can resist
     # accumulation but doesn't bank a comeback buffer.
-    retaliation_gauge_threshold: float = 50.0    # gauge value at which a conquer salient fires
+    # Threshold tuned against the current allocator's burst peaks at
+    # speed=10 (dev/headless cadence). NOTE: decay is per-tick, not
+    # per-second, so dynamics shift with world.speed — at speed=1 each
+    # flip nets -0.25 gauge and the gauge can never accumulate. Decay
+    # should become dt-aware before this threshold is trusted in
+    # production-speed play; tracked as a follow-up.
+    retaliation_gauge_threshold: float = 5.0     # gauge value at which a conquer salient fires
     retaliation_gauge_decay_per_tick: float = 0.25
     retaliation_w_se_flip: float = 1.0           # gauge += per SE capture
     retaliation_w_enemy_flip: float = 1.0        # gauge -= per enemy capture (clamped at 0)
@@ -125,6 +131,27 @@ class SimParams:
     # factory is actively pushing into SE territory. Stacks on top of urgency
     # / threat / corridor-position terms in se_ai._defensive_utility.
     defense_priority_bias: float = 2.0
+
+    # Allocator stochasticity. Without these, allocator output is fully
+    # deterministic given the cell state, which produces a near-constant
+    # flip rate and starves the retaliation gauge of bursts. The three
+    # knobs introduce variance independently:
+    #
+    # - pool_jitter_sigma: lognormal std-dev on the per-cycle pool size,
+    #   modeling active-vs-idle player population swings. exp(N(0, σ))
+    #   stays mostly within [0.55, 1.82] at σ=0.3.
+    # - temperature_jitter: uniform additive noise on softmax temperature,
+    #   so concentration vs spread varies cycle-to-cycle.
+    # - chunk_count: when >1, allocate as N discrete deployment chunks
+    #   sampled multinomially from the softmax distribution instead of
+    #   continuous proportional pressure. Discrete sampling is the main
+    #   source of multi-cell-flip-per-tick bursts.
+    #
+    # Set all three to 0 (or chunk_count<=1) for deterministic allocation
+    # — used by the test suite via conftest.make_world.
+    allocation_pool_jitter_sigma: float = 0.3
+    allocation_temperature_jitter: float = 0.6
+    allocation_chunk_count: int = 15
 
     # SE high command (strategic infrastructure planner). Sibling to the
     # diver allocator above: the allocator is the player-proxy executor,
