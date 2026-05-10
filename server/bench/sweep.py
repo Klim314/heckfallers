@@ -1,25 +1,26 @@
 """Parallel parameter sweep over the headless match runner.
 
 Runs N matches per parameter value across a process pool, then prints a
-summary table and writes a JSON dump. Generic over which param is being
-swept — pass it as ``--param`` / ``--values`` and the sweep handles the
-rest.
+side-by-side comparison table and writes a JSON dump with full per-match
+results. Generic over which param is being swept.
 
 Each (param_value, match_index) pair gets a deterministic seed so reruns
 are reproducible. Workers pin their own ``random`` state per match via
 ``run_match``.
+
+The summary borrows ``summarize_results`` from ``headless.py`` so the
+trajectory-shape and conquer-impact metrics surface in sweep output too.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import statistics
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any
 
-from .headless import run_match
+from .headless import format_summary, run_match, summarize_results
 
 
 def _coerce(v: str) -> Any:
@@ -48,41 +49,62 @@ def _job(args: tuple[str, Any, int, int, str, int, float]) -> dict:
     return result
 
 
-def _summarize(results: list[dict]) -> dict:
-    def mean(xs: list[float]) -> float:
-        return round(statistics.mean(xs), 3) if xs else 0.0
+def _table_row(value: Any, s: dict[str, Any]) -> str:
+    """Compact one-line summary for the comparison table."""
+    n = s["n"]
+    w = s["wins"]
+    return (
+        f"{str(value):>14} | "
+        f"{w['se']:>2}/{n:<2} | "
+        f"{w['running']:>3} | "
+        f"{s['max_swing_se_pct']['mean']:>6.1f} | "
+        f"{s['max_swing_se_pct']['p50']:>6.1f} | "
+        f"{s['time_below_75_se_ticks']['mean']:>6.1f} | "
+        f"{s['pre_steamroll_volatility']['mean']:>7.1f} | "
+        f"{s['competitive_match_count']:>4}/{n:<3} | "
+        f"{s['conquer_staged']['mean']:>5.2f} | "
+        f"{s['conquer_activated']['mean']:>5.2f} | "
+        f"{s['conquer_mean_impact']['mean']:>5.2f} | "
+        f"{s['conquer_max_impact']['p90']:>6.2f} | "
+        f"{s['final_tick']['p50']:>5.0f} | "
+        f"{s['se_pct_final']['p50']:>5.1f}"
+    )
 
-    def pmean(xs: list[float]) -> float:
-        return round(statistics.mean(xs), 2) if xs else 0.0
 
-    end_states = [r["end_state"] for r in results]
-    return {
-        "n": len(results),
-        "se_won": sum(1 for s in end_states if s == "se_won"),
-        "enemy_won": sum(1 for s in end_states if s == "enemy_won"),
-        "running": sum(1 for s in end_states if s == "running"),  # hit max_ticks
-        "mean_conquer_staged": mean([r["salients_conquer_staged"] for r in results]),
-        "mean_conquer_activated": mean([r["salients_conquer_activated"] for r in results]),
-        "mean_destroy": mean([r["salients_destroy"] for r in results]),
-        "mean_peak_gauge": pmean([r["peak_retaliation_gauge"] for r in results]),
-        "mean_match_ticks": int(mean([r["final_tick"] for r in results])),
-        "mean_se_pct": pmean([r["final_stats"]["se_pct"] for r in results]),
-        "mean_factory_strikes": mean([r["factory_strikes"] for r in results]),
-        "mean_repulses": mean([r["repulses"] for r in results]),
-    }
+def _table_header(param_name: str) -> str:
+    return (
+        f"{param_name:>14} | "
+        f"{'wins':>5} | "
+        f"{'run':>3} | "
+        f"{'swng_x':>6} | "
+        f"{'swng50':>6} | "
+        f"{'<75tk':>6} | "
+        f"{'volat':>7} | "
+        f"{'comp':>8} | "
+        f"{'cstg':>5} | "
+        f"{'cact':>5} | "
+        f"{'cimp':>5} | "
+        f"{'cmx90':>6} | "
+        f"{'tk50':>5} | "
+        f"{'sef50':>5}"
+    )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Parallel param sweep over headless matches.")
     ap.add_argument("--param", required=True, help="param name to sweep, e.g. retaliation_gauge_threshold")
     ap.add_argument("--values", required=True, help="comma-separated values, e.g. 50,30,20,15,10")
-    ap.add_argument("--matches-per-value", type=int, default=20)
+    ap.add_argument("--matches-per-value", type=int, default=50)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--scenario", default="demo_planet")
     ap.add_argument("--max-ticks", type=int, default=600)
     ap.add_argument("--speed", type=float, default=10.0)
     ap.add_argument("--seed-base", type=int, default=1000)
     ap.add_argument("--out", default="server/bench/sweep_results.json")
+    ap.add_argument(
+        "--detail", action="store_true",
+        help="Also print the full per-value summary block (trajectory + conquer metrics with quantiles).",
+    )
     args = ap.parse_args()
 
     values = [_coerce(v.strip()) for v in args.values.split(",")]
@@ -101,27 +123,37 @@ def main() -> int:
         for f in as_completed(futures):
             results.append(f.result())
     elapsed = time.time() - t0
-    print(f"Done in {elapsed:.1f}s real time ({elapsed / len(jobs):.2f}s per match equivalent serial).")
+    print(f"Done in {elapsed:.1f}s real ({elapsed / len(jobs):.3f}s per match serial-equivalent).")
+    print()
 
     by_value: dict[Any, list[dict]] = {}
     for r in results:
         by_value.setdefault(r["_param_value"], []).append(r)
 
-    summaries = {}
-    print()
-    header = f"{args.param:>30} | {'n':>3} | {'se_won':>6} | {'running':>7} | "\
-            f"{'cnq_stg':>7} | {'cnq_act':>7} | {'destroy':>7} | {'peak':>5} | "\
-            f"{'ticks':>5} | {'se_pct':>6} | {'fac_strk':>8} | {'repulses':>8}"
+    summaries: dict[str, dict[str, Any]] = {}
+    header = _table_header(args.param)
     print(header)
     print("-" * len(header))
     for value in values:
         rs = by_value.get(value, [])
-        s = _summarize(rs)
+        s = summarize_results(rs)
         summaries[str(value)] = s
-        print(f"{str(value):>30} | {s['n']:>3} | {s['se_won']:>6} | {s['running']:>7} | "
-              f"{s['mean_conquer_staged']:>7} | {s['mean_conquer_activated']:>7} | {s['mean_destroy']:>7} | "
-              f"{s['mean_peak_gauge']:>5} | {s['mean_match_ticks']:>5} | {s['mean_se_pct']:>6} | "
-              f"{s['mean_factory_strikes']:>8} | {s['mean_repulses']:>8}")
+        print(_table_row(value, s))
+
+    print()
+    print(
+        "wins=SE/n  run=timeouts  swng_x/50=max_swing mean/p50  <75tk=ticks SE<75% mean  "
+        "volat=pre-steamroll volatility mean  comp=competitive matches (no steamroll)/n  "
+        "cstg/cact=conquer staged/activated mean  cimp/cmx90=conquer mean impact / max impact p90  "
+        "tk50=match length p50  sef50=final SE% p50"
+    )
+
+    if args.detail:
+        for value in values:
+            rs = by_value.get(value, [])
+            s = summarize_results(rs)
+            print()
+            print(format_summary(s, f"{args.param}={value}"))
 
     with open(args.out, "w") as f:
         json.dump({
