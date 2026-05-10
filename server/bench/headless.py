@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import statistics
 import sys
@@ -48,6 +49,7 @@ def run_match(
     max_ticks: int = 600,
     speed: float = 10.0,
     include_trace: bool = False,
+    include_events: bool = False,
 ) -> dict:
     """Run one match end-to-end. Pure function over (seed, params, speed).
 
@@ -225,6 +227,8 @@ def run_match(
     }
     if include_trace:
         result["trace"] = trace
+    if include_events:
+        result["events"] = all_events
     return result
 
 
@@ -515,7 +519,15 @@ def main() -> int:
     )
     ap.add_argument(
         "--save-trace", action="store_true",
-        help="Include the per-tick trace in the per-match output (single-match mode only).",
+        help="Include the per-tick (tick, se%, en%, contested, gauge) trace in the per-match output.",
+    )
+    ap.add_argument(
+        "--save-events", action="store_true",
+        help=(
+            "Include the full per-tick event stream (cell_captured, salient_*, etc.) in the "
+            "per-match output. Single-match mode auto-routes the dump to "
+            "server/bench/dumps/match_<seed>.json if --out is not set."
+        ),
     )
     ap.add_argument("--out", default=None, help="If set, write the full results JSON to this path.")
     args = ap.parse_args()
@@ -530,12 +542,18 @@ def main() -> int:
             max_ticks=args.max_ticks,
             speed=args.speed,
             include_trace=args.save_trace,
+            include_events=args.save_events,
         )
         text = json.dumps(result, indent=2, default=str)
-        if args.out:
-            with open(args.out, "w") as f:
+        # When dumping events/trace, route to dumps/ unless the user picked a path.
+        out = args.out
+        if out is None and (args.save_events or args.save_trace):
+            os.makedirs("server/bench/dumps", exist_ok=True)
+            out = f"server/bench/dumps/match_{args.seed}.json"
+        if out:
+            with open(out, "w") as f:
                 f.write(text)
-            print(f"Wrote per-match result to {args.out}")
+            print(f"Wrote per-match result to {out}")
         else:
             print(text)
         return 0

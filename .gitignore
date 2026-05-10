@@ -45,6 +45,10 @@ desktop.ini
 # Ad-hoc demo screenshots at repo root
 /demo-*.png
 
+# Bench output (reproducible from seeds — never commit)
+server/bench/sweep_results.json
+server/bench/dumps/
+
 # Env files
 .env
 .env.local
