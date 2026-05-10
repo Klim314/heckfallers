@@ -26,7 +26,8 @@ export type PoiKind =
   | "fortress"
   | "resistance_node"
   | "build_site"
-  | "factory";
+  | "factory"
+  | "salient_staging";
 
 export interface PoiState {
   id: string;
@@ -47,7 +48,13 @@ export interface SalientState {
   target_poi_id: string;
   spawned_tick: number;
   expires_tick: number;
-  region?: [number, number][];
+  // Conquer-only fields. Server emits tracked_cells as triples (q, r, gen)
+  // because tuple-keyed dicts don't JSON-serialize.
+  activated?: boolean;
+  staging_poi_id?: string;
+  axis?: [number, number] | null;
+  fan_size?: number;
+  tracked_cells?: Array<[number, number, number]>;
 }
 
 // Match events are append-only on the server (capped to ~100 entries).
@@ -57,6 +64,8 @@ export type MatchEventType =
   | "cell_captured"
   | "cell_repulsed"
   | "salient_spawned"
+  | "salient_staging_spawned"
+  | "salient_activated"
   | "salient_ended"
   | "build_started"
   | "build_completed"

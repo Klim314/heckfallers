@@ -314,6 +314,9 @@ class World:
 
         self._supply_dirty = True
 
+        # Conquer-salient spread hook fires last, after default bookkeeping.
+        salient_mod.on_cell_flip(self, cell.coord, new_defender)
+
     def _is_breakthrough(self, cell: Cell, new_defender: Ownership) -> bool:
         # v1: only fires when SE flips an enemy cell, since enemy is the
         # rooted defender. SE-defender supply isn't modeled yet.
@@ -511,6 +514,10 @@ class World:
         if kind == "resistance_node":
             return owner == Ownership.ENEMY and cell.defender == Ownership.ENEMY
         if kind == "factory":
+            return (owner == Ownership.ENEMY
+                    and cell.defender == Ownership.ENEMY
+                    and cell.attacker is None)
+        if kind == "salient_staging":
             return (owner == Ownership.ENEMY
                     and cell.defender == Ownership.ENEMY
                     and cell.attacker is None)

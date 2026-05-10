@@ -12,6 +12,12 @@ def pin_deterministic_allocation(w: World) -> None:
     w.params.allocation_chunk_count = 0
 
 
+def pin_fast_conquer_charge(w: World) -> None:
+    """Drop the staging-charge timer to a single tick so tests don't have to
+    spin the clock. Mirrors how diver/build tests pin slow timers."""
+    w.params.conquer_staging_charge_s = 1.0 / w.params.tick_hz
+
+
 def make_world(width: int = 12) -> World:
     """A 1-row strip of cells from q=0..width-1, all SE except the rightmost
     which is the enemy capital. Lets tests place a POI mid-strip and observe

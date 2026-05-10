@@ -95,8 +95,15 @@ class SimParams:
     max_active_conquer_salients: int = 1
     conquer_salient_lifetime_s: float = 120.0    # longer than destroy — sustained low-grade contestation
     conquer_pressure_magnitude: float = 80.0     # ~40% of destroy magnitude — wide and low-intensity
-    conquer_cluster_count: int = 3               # K densest clusters from the recent-flip buffer
-    conquer_cluster_radius: int = 2              # patch radius around each cluster center
+    # Conquer salient redesign: leapfrogging directional wedge with a
+    # telegraphed staging POI. See docs/conquer-salient-redesign.md.
+    conquer_staging_charge_s: float = 15.0       # time from staging spawn to activation
+    conquer_staging_siege_mult: float = 2.0      # flip-threshold multiplier on the staging POI's own cell — slows divers clearing it
+    conquer_fan_min: int = 2                     # inclusive lower bound of initial fan-size roll
+    conquer_fan_max: int = 3                     # inclusive upper bound
+    conquer_spread_p_base: float = 0.35          # per-source probability before generation decay
+    conquer_spread_decay_base: float = 0.7       # decay_base^gen reduces probability with depth
+    conquer_max_gen: int = 6                     # hard safety cap on wedge depth
 
     # Factories: enemy POI that pumps a continuous trickle of small
     # incursions on nearby SE cells. Salient is a focused operation;

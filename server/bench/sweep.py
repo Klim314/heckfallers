@@ -61,7 +61,8 @@ def _summarize(results: list[dict]) -> dict:
         "se_won": sum(1 for s in end_states if s == "se_won"),
         "enemy_won": sum(1 for s in end_states if s == "enemy_won"),
         "running": sum(1 for s in end_states if s == "running"),  # hit max_ticks
-        "mean_conquer": mean([r["salients_conquer"] for r in results]),
+        "mean_conquer_staged": mean([r["salients_conquer_staged"] for r in results]),
+        "mean_conquer_activated": mean([r["salients_conquer_activated"] for r in results]),
         "mean_destroy": mean([r["salients_destroy"] for r in results]),
         "mean_peak_gauge": pmean([r["peak_retaliation_gauge"] for r in results]),
         "mean_match_ticks": int(mean([r["final_tick"] for r in results])),
@@ -109,8 +110,8 @@ def main() -> int:
     summaries = {}
     print()
     header = f"{args.param:>30} | {'n':>3} | {'se_won':>6} | {'running':>7} | "\
-            f"{'conquer':>7} | {'destroy':>7} | {'peak_gauge':>10} | "\
-            f"{'ticks':>5} | {'se_pct':>6} | {'fac_strikes':>11} | {'repulses':>8}"
+            f"{'cnq_stg':>7} | {'cnq_act':>7} | {'destroy':>7} | {'peak':>5} | "\
+            f"{'ticks':>5} | {'se_pct':>6} | {'fac_strk':>8} | {'repulses':>8}"
     print(header)
     print("-" * len(header))
     for value in values:
@@ -118,8 +119,9 @@ def main() -> int:
         s = _summarize(rs)
         summaries[str(value)] = s
         print(f"{str(value):>30} | {s['n']:>3} | {s['se_won']:>6} | {s['running']:>7} | "
-              f"{s['mean_conquer']:>7} | {s['mean_destroy']:>7} | {s['mean_peak_gauge']:>10} | "
-              f"{s['mean_match_ticks']:>5} | {s['mean_se_pct']:>6} | {s['mean_factory_strikes']:>11} | {s['mean_repulses']:>8}")
+              f"{s['mean_conquer_staged']:>7} | {s['mean_conquer_activated']:>7} | {s['mean_destroy']:>7} | "
+              f"{s['mean_peak_gauge']:>5} | {s['mean_match_ticks']:>5} | {s['mean_se_pct']:>6} | "
+              f"{s['mean_factory_strikes']:>8} | {s['mean_repulses']:>8}")
 
     with open(args.out, "w") as f:
         json.dump({

@@ -63,6 +63,8 @@ def run_match(
     captures = [e for e in all_events if e["type"] == "cell_captured"]
     repulses = [e for e in all_events if e["type"] == "cell_repulsed"]
     salients_spawned = [e for e in all_events if e["type"] == "salient_spawned"]
+    staging_spawned = [e for e in all_events if e["type"] == "salient_staging_spawned"]
+    activated = [e for e in all_events if e["type"] == "salient_activated"]
     salients_ended = [e for e in all_events if e["type"] == "salient_ended"]
     factory_strikes = [e for e in all_events if e["type"] == "factory_strike"]
     builds_done = [e for e in all_events if e["type"] == "build_completed"]
@@ -84,12 +86,14 @@ def run_match(
         "breakthroughs": sum(1 for e in captures if e.get("breakthrough")),
         "captures_total": len(captures),
         "repulses": len(repulses),
-        "salients_spawned_total": len(salients_spawned),
         "salients_destroy": salient_kinds.get("destroy", 0),
-        "salients_conquer": salient_kinds.get("conquer", 0),
+        "salients_conquer_staged": len(staging_spawned),
+        "salients_conquer_activated": len(activated),
         "salients_ended": len(salients_ended),
         "salient_success": salient_reasons.get("success", 0),
         "salient_expired": salient_reasons.get("expired", 0),
+        "salient_intercepted": salient_reasons.get("intercepted", 0),
+        "salient_extinguished": salient_reasons.get("extinguished", 0),
         "factory_strikes": len(factory_strikes),
         "builds_completed": len(builds_done),
         "peak_retaliation_gauge": round(peak_gauge, 2),

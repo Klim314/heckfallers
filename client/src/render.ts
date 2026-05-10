@@ -32,6 +32,7 @@ const POI_GLYPH: Record<PoiKind, string> = {
   resistance_node: "n",
   build_site: "?",   // overridden at draw time by state.target_kind glyph
   factory: "f",
+  salient_staging: "!",  // overridden at draw time by a triangular warning glyph
 };
 
 const POI_RADIUS_PARAM: Record<PoiKind, string> = {
@@ -41,6 +42,7 @@ const POI_RADIUS_PARAM: Record<PoiKind, string> = {
   resistance_node: "node_radius",
   build_site: "",   // no halo for pending sites — skipped in the halo pass
   factory: "factory_radius",
+  salient_staging: "",  // staging POIs have no buff radius — skipped
 };
 
 interface AreaCircle {
@@ -315,6 +317,10 @@ export class Renderer {
       this.drawBuildSite(poi);
       return;
     }
+    if (poi.kind === "salient_staging") {
+      this.drawSalientStaging(poi);
+      return;
+    }
     const ctx = this.ctx;
     const center = axialToPixel([poi.q, poi.r], this.layout);
     const r = this.layout.size * 0.42;
@@ -413,6 +419,51 @@ export class Renderer {
     ctx.restore();
   }
 
+  private drawSalientStaging(poi: PoiState): void {
+    const ctx = this.ctx;
+    const center = axialToPixel([poi.q, poi.r], this.layout);
+    const r = this.layout.size * 0.5;
+    const completesAt = (poi.state.charge_completes_at as number | undefined) ?? 0;
+    const tick = this.store.current?.tick ?? 0;
+    const tickHz = (this.store.current?.params.tick_hz ?? 5) as number;
+    const remaining = Math.max(0, completesAt - tick);
+
+    // Pulse intensifies as charge nears completion.
+    const chargeS = (this.store.current?.params.conquer_staging_charge_s ?? 15) as number;
+    const totalCharge = Math.max(1, chargeS * tickHz);
+    const proximity = 1 - Math.min(1, remaining / totalCharge);
+    const pulse = (Math.sin(performance.now() / (250 - proximity * 150)) + 1) / 2;
+
+    ctx.save();
+    // Triangular warning outline pointing up.
+    ctx.strokeStyle = COLOR.salient;
+    ctx.lineWidth = 2 + pulse * 1.5;
+    ctx.globalAlpha = 0.6 + pulse * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y - r);
+    ctx.lineTo(center.x + r * 0.9, center.y + r * 0.7);
+    ctx.lineTo(center.x - r * 0.9, center.y + r * 0.7);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Exclamation mark inside.
+    ctx.fillStyle = COLOR.salient;
+    ctx.globalAlpha = 1;
+    ctx.font = `bold ${Math.round(this.layout.size * 0.5)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("!", center.x, center.y + this.layout.size * 0.05);
+
+    // Countdown above.
+    if (remaining > 0) {
+      const seconds = Math.ceil(remaining / tickHz);
+      ctx.fillStyle = COLOR.text;
+      ctx.font = `${Math.round(this.layout.size * 0.32)}px sans-serif`;
+      ctx.fillText(`${seconds}s`, center.x, center.y - this.layout.size * 0.65);
+    }
+    ctx.restore();
+  }
+
   private drawHaloRing(coord: Coord, radius: number, color: string): void {
     // Render a soft halo of pixels within the hex radius.
     const snap = this.store.current;
@@ -438,6 +489,30 @@ export class Renderer {
 
   private drawSalient(s: SalientState): void {
     const ctx = this.ctx;
+
+    // Conquer salients render their live tracked-cells footprint as a faint
+    // cell overlay; they have no corridor or arrow. Pre-activation conquer
+    // salients (only the staging POI is visible) render nothing here.
+    if (s.kind === "conquer") {
+      if (!s.activated || !s.tracked_cells || s.tracked_cells.length === 0) return;
+      ctx.save();
+      ctx.fillStyle = COLOR.salient;
+      ctx.globalAlpha = 0.12;
+      for (const [q, r] of s.tracked_cells) {
+        const corners = hexCorners([q, r], this.layout);
+        ctx.beginPath();
+        for (let i = 0; i < corners.length; i++) {
+          const p = corners[i];
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+
     if (s.corridor.length < 2) return;
 
     // Faint cell-shaped overlay along the corridor so the path reads even

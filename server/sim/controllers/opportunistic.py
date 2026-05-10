@@ -169,16 +169,18 @@ class OpportunisticController:
         if active_conquer >= params.max_active_conquer_salients:
             return
 
+        # Single-target staging: pick the best cluster center (k=1) and use it
+        # as the SE-cell target for the staging POI's placement search.
         centers = salient_mod.find_recent_flip_clusters(
             world._recent_se_flips,
-            k=params.conquer_cluster_count,
-            radius=params.conquer_cluster_radius,
+            k=1,
+            radius=2,
             window_ticks=params.recent_se_flip_window_ticks,
             current_tick=world.tick,
         )
         if not centers:
             return
 
-        salient = salient_mod.spawn_conquer_salient(world, centers)
+        salient = salient_mod.spawn_conquer_staging(world, centers[0])
         if salient is not None:
             world.retaliation_gauge = 0.0

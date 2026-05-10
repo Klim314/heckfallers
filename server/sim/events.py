@@ -12,8 +12,14 @@ Event types currently emitted:
   ``defender`` (the side that held).
 - ``salient_spawned``: enemy salient created. ``salient_id``, ``kind``
   (destroy|conquer), ``target`` (or null), ``target_poi_id`` (or null).
+- ``salient_staging_spawned``: conquer salient telegraphed via a staging
+  POI. ``salient_id``, ``staging_coord``, ``target_coord``,
+  ``charge_completes_at``.
+- ``salient_activated``: staging-phase conquer salient promoted to active.
+  ``salient_id``, ``axis``, ``fan`` (list of cells contested at activation).
 - ``salient_ended``: salient removed. ``salient_id``, ``kind``, ``reason``
-  (success|expired). Replaces the older ``destroy_salient_success``.
+  (success|expired|extinguished|intercepted). Replaces the older
+  ``destroy_salient_success``.
 - ``build_started``: SE build site placed. ``coord``, ``target_kind``,
   ``owner``, ``completes_at``.
 - ``build_completed``: build site resolved into final POI. ``coord``,

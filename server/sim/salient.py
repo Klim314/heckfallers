@@ -8,19 +8,24 @@ a Salient dataclass plus module-level functions called by the world tick
 Two kinds exist:
 - ``destroy``: a single corridor from the enemy front to a high-value SE
   POI, narrow and high-pressure. Ends on lifetime or target POI loss.
-- ``conquer``: a union of small patches dropped on top of recent SE
-  capture activity. Wide and low-pressure — rubber-banding retaliation
-  for a player who's been clearing too quickly. Ends only on lifetime.
+- ``conquer``: a leapfrogging directional wedge. Spawns a visible staging
+  POI on enemy territory; after a charge timer it activates with a 2- or
+  3-cell initial fan; subsequent SE→ENEMY flips inside the salient roll
+  forward-hemisphere-only spread with additive probability across adjacent
+  tracked cells and per-generation decay. Ends on lifetime expiry, on
+  staging-POI loss before activation (intercepted), or when all tracked
+  cells are repulsed (extinguished). See docs/conquer-salient-redesign.md.
 """
 from __future__ import annotations
 
+import random
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Literal, TYPE_CHECKING
 
 from .cell import Ownership
 from .events import emit
-from .grid import Coord, cells_within, distance, neighbors
+from .grid import Coord, _axial_to_cube, distance, forward_hemisphere, neighbors
 
 if TYPE_CHECKING:
     from .world import World
@@ -33,12 +38,21 @@ SalientKind = Literal["destroy", "conquer"]
 class Salient:
     id: str
     kind: SalientKind
-    corridor: list[Coord]
-    target: Coord | None
-    target_poi_id: str | None
     spawned_tick: int
     expires_tick: int
-    region: list[Coord] = field(default_factory=list)
+
+    # destroy-only
+    corridor: list[Coord] = field(default_factory=list)
+    target: Coord | None = None
+    target_poi_id: str | None = None
+
+    # conquer-only (new shape)
+    activated: bool = False
+    staging_poi_id: str | None = None
+    axis: Coord | None = None
+    fan_size: int = 0
+    tracked_cells: dict[Coord, int] = field(default_factory=dict)
+
     state: dict = field(default_factory=dict)
 
     def to_wire(self) -> dict:
@@ -51,18 +65,59 @@ class Salient:
             "spawned_tick": self.spawned_tick,
             "expires_tick": self.expires_tick,
         }
-        if self.region:
-            out["region"] = [list(c) for c in self.region]
+        if self.kind == "conquer":
+            out["activated"] = self.activated
+            out["staging_poi_id"] = self.staging_poi_id or ""
+            out["axis"] = list(self.axis) if self.axis is not None else None
+            out["fan_size"] = self.fan_size
+            # tuple-keyed dicts don't JSON-serialize; emit as list of [q, r, gen].
+            out["tracked_cells"] = [
+                [c[0], c[1], gen] for c, gen in self.tracked_cells.items()
+            ]
         return out
 
 
 def update_salients(world: "World") -> None:
-    """Expire salients past lifetime or whose target POI is gone.
+    """Drive salient state machines: lifetime expiry, target-POI destruction,
+    conquer staging-charge timer, conquer tracked-cells pruning, conquer
+    natural extinction.
 
-    Emits a ``salient_ended`` event with reason=success|expired so the
-    client log can render the outcome. Conquer salients have no POI
-    target — they only end on lifetime (reason=expired).
+    Emits a ``salient_ended`` event with reason=success|expired|extinguished|
+    intercepted so the client log can render the outcome. Conquer salients
+    in their staging phase end with reason=intercepted if their staging POI
+    is gone; activated conquer salients end with reason=extinguished if
+    their tracked-cells set empties out.
     """
+    # First pass: drive conquer state machines (may activate or end them).
+    for sid, s in list(world.salients.items()):
+        if s.kind != "conquer":
+            continue
+        if not s.activated:
+            # Pre-activation: staging-POI lifecycle.
+            if s.staging_poi_id is None or s.staging_poi_id not in world.pois:
+                _end_salient(world, sid, "intercepted")
+                continue
+            staging = world.pois[s.staging_poi_id]
+            charge_at = staging.state.get("charge_completes_at", float("inf"))
+            if world.tick >= charge_at:
+                activate_conquer_salient(world, s)
+        else:
+            # Activated: prune any tracked cell that's now SE-defended uncontested
+            # (covers both repulse and SE recapture of a flipped salient cell).
+            doomed_coords = [
+                c for c in s.tracked_cells
+                if (cell := world.grid.get(c)) is not None
+                and cell.defender == Ownership.SUPER_EARTH
+                and cell.attacker is None
+            ]
+            for c in doomed_coords:
+                del s.tracked_cells[c]
+            if doomed_coords:
+                world._supply_dirty = True
+            if not s.tracked_cells:
+                _end_salient(world, sid, "extinguished")
+
+    # Second pass: destroy success + universal lifetime expiry.
     doomed: list[tuple[str, str]] = []  # (salient_id, reason)
     for sid, s in world.salients.items():
         if (s.kind == "destroy"
@@ -73,18 +128,28 @@ def update_salients(world: "World") -> None:
             doomed.append((sid, "expired"))
 
     for sid, reason in doomed:
-        s = world.salients.pop(sid)
-        emit(
-            world, "salient_ended",
-            salient_id=sid,
-            kind=s.kind,
-            reason=reason,
-            target=list(s.target) if s.target is not None else None,
-        )
+        _end_salient(world, sid, reason)
 
-    if doomed:
-        # Corridor cells need to revert from tunneled supply back to BFS.
-        world._supply_dirty = True
+
+def _end_salient(world: "World", sid: str, reason: str) -> None:
+    """Pop a salient and emit ``salient_ended``. Also tears down a staging
+    POI if the salient was still in its staging phase."""
+    s = world.salients.pop(sid, None)
+    if s is None:
+        return
+    # Tear down a still-attached staging POI so a cancelled conquer salient
+    # doesn't leave its telegraph orphaned on the grid.
+    if s.kind == "conquer" and s.staging_poi_id and s.staging_poi_id in world.pois:
+        world.remove_poi(s.staging_poi_id)
+        s.staging_poi_id = None
+    emit(
+        world, "salient_ended",
+        salient_id=sid,
+        kind=s.kind,
+        reason=reason,
+        target=list(s.target) if s.target is not None else None,
+    )
+    world._supply_dirty = True
 
 
 def apply_salient_supply(world: "World") -> None:
@@ -113,9 +178,12 @@ def apply_salient_pressure(world: "World") -> None:
     ``salient_pressure * pressure_coefficient * en_factor``.
 
     Per-kind magnitude (destroy ~ high, conquer ~ low) makes overlap
-    saturating-by-max: when corridors and conquer regions cross, the
-    higher destroy magnitude wins and conquer-on-conquer caps at one
-    conquer's worth — never additive, so stacking can't blow up.
+    saturating-by-max: when destroy corridors and conquer tracked cells
+    cross, the higher destroy magnitude wins and conquer-on-conquer caps
+    at one conquer's worth — never additive, so stacking can't blow up.
+
+    Conquer salients only stamp once activated; pre-activation salients
+    are pure telegraph (the staging POI is the player's signal).
 
     Re-stamped each tick so an expiring salient releases its cells
     immediately. Non-contested cells carry the value for visualization
@@ -128,10 +196,13 @@ def apply_salient_pressure(world: "World") -> None:
     for s in world.salients.values():
         if s.kind == "destroy":
             magnitude = destroy_mag
-            cells = s.corridor
+            cells: list[Coord] | tuple[Coord, ...] = s.corridor
         elif s.kind == "conquer":
+            # Pre-activation conquer salients are pure telegraph — no pressure.
+            if not s.activated:
+                continue
             magnitude = conquer_mag
-            cells = s.region
+            cells = list(s.tracked_cells.keys())
         else:
             continue
         for coord in cells:
@@ -300,68 +371,232 @@ def find_recent_flip_clusters(
     return picks
 
 
-def spawn_conquer_salient(world: "World", centers: list[Coord]) -> Salient | None:
-    """Construct + register a conquer salient covering the given cluster centers.
+# --------------------------------------------------------------------- #
+# Conquer salient — staging / activation / spread
+# --------------------------------------------------------------------- #
 
-    Each center contributes the cells within ``conquer_cluster_radius``
-    (deduped across centers) to the salient's region. SE-defended region
-    cells with no current attacker get opened to enemy contestation —
-    that's the "widespread push" — so the lower-magnitude pressure stamp
-    has cells to bite on. Returns None if no valid grid cells were found.
+
+def spawn_conquer_staging(world: "World", target_se_cell: Coord) -> "Salient | None":
+    """Place a staging POI on the closest enemy-defended uncontested cell to
+    ``target_se_cell`` and register a pre-activation conquer salient.
+
+    The salient's lifetime starts now (staging spawn), not at activation —
+    keeps the duration knob simple. The staging POI carries the charge timer
+    and a back-pointer to the salient. Returns None if no suitable host cell
+    exists within range.
     """
-    if not centers:
+    if world.grid.get(target_se_cell) is None:
         return None
-    radius = world.params.conquer_cluster_radius
-    region: list[Coord] = []
-    seen: set[Coord] = set()
-    for ctr in centers:
-        for c in cells_within(ctr, radius):
-            if c in seen:
-                continue
-            if world.grid.get(c) is None:
-                continue
-            seen.add(c)
-            region.append(c)
-    if not region:
+
+    max_range = world.params.destroy_max_range
+    best: tuple[int, Coord] | None = None
+    for coord, cell in world.grid.items():
+        if cell.defender != Ownership.ENEMY or cell.attacker is not None:
+            continue
+        d = distance(coord, target_se_cell)
+        if d > max_range:
+            continue
+        if best is None or d < best[0] or (d == best[0] and coord < best[1]):
+            best = (d, coord)
+    if best is None:
+        return None
+    staging_coord = best[1]
+
+    poi = world.place_poi("salient_staging", Ownership.ENEMY, staging_coord)
+    if poi is None:
         return None
 
     sid = f"sal_{world._next_salient_id}"
     world._next_salient_id += 1
     lifetime_ticks = int(world.params.conquer_salient_lifetime_s * world.params.tick_hz)
+    fan_size = random.randint(world.params.conquer_fan_min, world.params.conquer_fan_max)
+    axis_hint = (target_se_cell[0] - staging_coord[0], target_se_cell[1] - staging_coord[1])
 
     salient = Salient(
         id=sid,
         kind="conquer",
-        corridor=[],
-        target=None,
-        target_poi_id=None,
         spawned_tick=world.tick,
         expires_tick=world.tick + lifetime_ticks,
-        region=region,
-    )
-    world.salients[sid] = salient
-    emit(
-        world, "salient_spawned",
-        salient_id=sid,
-        kind="conquer",
-        target=None,
-        target_poi_id=None,
-        region_size=len(region),
-        center=list(centers[0]) if centers else None,
+        activated=False,
+        staging_poi_id=poi.id,
+        axis=axis_hint,
+        fan_size=fan_size,
     )
 
-    # Open the push: every SE-defended uncontested region cell becomes
-    # enemy-attacker. Without this the pressure stamp lands on cells whose
-    # attacker is None, which _apply_pressure skips. Wide opening matches
-    # the "push into multiple areas" intent — many simultaneous shallow
-    # contests rather than one focused breach.
-    for coord in region:
+    charge_ticks = int(world.params.conquer_staging_charge_s * world.params.tick_hz)
+    poi.state["charge_completes_at"] = world.tick + charge_ticks
+    poi.state["parent_salient_id"] = sid
+
+    world.salients[sid] = salient
+    emit(
+        world, "salient_staging_spawned",
+        salient_id=sid,
+        staging_coord=list(staging_coord),
+        target_coord=list(target_se_cell),
+        charge_completes_at=poi.state["charge_completes_at"],
+    )
+    return salient
+
+
+def activate_conquer_salient(world: "World", salient: Salient) -> None:
+    """Promote a staging-phase conquer salient to active: pick fan cells in
+    the forward hemisphere of the staging POI's axis hint, contest them,
+    freeze the centroid-based axis, and remove the staging POI.
+
+    If no fan cells can be placed (terrain blocks all forward hexes), the
+    salient ends with reason ``intercepted``.
+    """
+    if salient.activated:
+        return
+    staging_id = salient.staging_poi_id
+    staging_poi = world.pois.get(staging_id) if staging_id else None
+    if staging_poi is None:
+        # Defensive: caller should have routed this through update_salients,
+        # which would already have ended the salient on missing staging POI.
+        _end_salient(world, salient.id, "intercepted")
+        return
+    staging_coord = staging_poi.coord
+
+    axis_hint = salient.axis if salient.axis is not None else (1, 0)
+    if axis_hint == (0, 0):
+        axis_hint = (1, 0)
+    forward_dirs = forward_hemisphere(axis_hint)
+    if not forward_dirs:
+        # No forward direction — extremely defensive (axis was zero). Bail.
+        _end_salient(world, salient.id, "intercepted")
+        return
+
+    # Order forward_dirs by descending dot product with the axis hint so the
+    # pure-forward direction comes first, then the two forward-laterals.
+    axis_cube = _axial_to_cube(axis_hint)
+
+    def _dot(d: Coord) -> int:
+        b = _axial_to_cube(d)
+        return sum(x * y for x, y in zip(axis_cube, b))
+
+    ordered = sorted(forward_dirs, key=lambda d: -_dot(d))
+
+    # Pick fan cells: pure-forward first, then forward-laterals in NEIGHBOR_DIRS order.
+    # Only SE-defended uncontested cells are eligible — pre-contested cells (by
+    # another mechanism: destroy salient, factory, etc.) would otherwise be
+    # silently absorbed into tracked_cells without being re-contested.
+    picked: list[Coord] = []
+    for d in ordered:
+        coord = (staging_coord[0] + d[0], staging_coord[1] + d[1])
         cell = world.grid.get(coord)
         if cell is None:
             continue
-        if cell.defender == Ownership.SUPER_EARTH and cell.attacker is None:
-            cell.attacker = Ownership.ENEMY
-            cell.progress = 0.0
+        if cell.defender != Ownership.SUPER_EARTH or cell.attacker is not None:
+            continue
+        # Skip cells already tracked by another conquer salient (multi-salient overlap guard).
+        if any(
+            other.kind == "conquer"
+            and other is not salient
+            and coord in other.tracked_cells
+            for other in world.salients.values()
+        ):
+            continue
+        picked.append(coord)
 
+    picked = picked[: salient.fan_size] if salient.fan_size > 0 else picked
+    if not picked:
+        _end_salient(world, salient.id, "intercepted")
+        return
+
+    for coord in picked:
+        cell = world.grid[coord]
+        cell.attacker = Ownership.ENEMY
+        cell.progress = 0.0
+        salient.tracked_cells[coord] = 0
+
+    # Freeze axis = centroid(picked) - staging.
+    cq = sum(c[0] for c in picked) / len(picked)
+    cr = sum(c[1] for c in picked) / len(picked)
+    new_axis: Coord = (round(cq) - staging_coord[0], round(cr) - staging_coord[1])
+    if new_axis == (0, 0):
+        # Degenerate centroid; fall back to the original axis hint.
+        new_axis = axis_hint
+    salient.axis = new_axis
+
+    world.remove_poi(staging_id)
+    salient.staging_poi_id = None
+    salient.activated = True
     world._supply_dirty = True
-    return salient
+
+    emit(
+        world, "salient_activated",
+        salient_id=salient.id,
+        axis=list(new_axis),
+        fan=[list(c) for c in picked],
+    )
+
+
+def on_cell_flip(world: "World", coord: Coord, new_defender: Ownership) -> None:
+    """Hook fired from ``World._flip_cell`` after default bookkeeping.
+
+    For an ENEMY flip on a coord tracked by an activated conquer salient,
+    roll spread into the forward-hemisphere neighbors with additive
+    probability across adjacent already-tracked cells, decayed per
+    generation. New contestations are added to ``tracked_cells`` with
+    ``gen = parent_gen + 1``. The new contestations cannot themselves
+    flip in the same tick, so this is safe to run synchronously without
+    cascade risk.
+    """
+    if new_defender != Ownership.ENEMY:
+        return
+    parent: Salient | None = None
+    for s in world.salients.values():
+        if s.kind != "conquer" or not s.activated:
+            continue
+        if coord in s.tracked_cells:
+            parent = s
+            break
+    if parent is None:
+        return
+    if parent.axis is None:
+        return
+
+    parent_gen = parent.tracked_cells[coord]
+    p_base = world.params.conquer_spread_p_base
+    decay = world.params.conquer_spread_decay_base
+    max_gen = world.params.conquer_max_gen
+
+    # Snapshot tracked_cells before the loop so all neighbors see the same
+    # k for this single flip event — newly-contested cells in this loop
+    # don't cascade into raising k for the cells we visit next.
+    tracked_snapshot = list(parent.tracked_cells.keys())
+
+    for d in forward_hemisphere(parent.axis):
+        n_coord = (coord[0] + d[0], coord[1] + d[1])
+        ncell = world.grid.get(n_coord)
+        if ncell is None:
+            continue
+        if n_coord in parent.tracked_cells:
+            continue
+        # Multi-salient guard: don't poach a cell tracked by another conquer.
+        if any(
+            other.kind == "conquer"
+            and other is not parent
+            and n_coord in other.tracked_cells
+            for other in world.salients.values()
+        ):
+            continue
+        if ncell.defender != Ownership.SUPER_EARTH or ncell.attacker is not None:
+            continue
+        gen_new = parent_gen + 1
+        if gen_new > max_gen:
+            continue
+        # k = number of currently-tracked salient cells adjacent to n_coord,
+        # measured against the pre-loop snapshot.
+        k = sum(1 for t in tracked_snapshot if distance(t, n_coord) == 1)
+        if k <= 0:
+            continue
+        p_per_source = p_base * (decay ** gen_new)
+        # Clamp per-source probability so 1-(1-p)^k stays well-defined.
+        p_per_source = max(0.0, min(1.0, p_per_source))
+        p_contest = 1.0 - (1.0 - p_per_source) ** k
+        if random.random() < p_contest:
+            ncell.attacker = Ownership.ENEMY
+            ncell.progress = 0.0
+            parent.tracked_cells[n_coord] = gen_new
+            world._supply_dirty = True

@@ -83,6 +83,7 @@ function kindLabel(k: unknown): string {
     resistance_node: "resistance node",
     factory: "factory",
     build_site: "build site",
+    salient_staging: "salient staging",
   };
   return map[k] ?? k;
 }
@@ -116,15 +117,23 @@ function formatEvent(e: MatchEvent): FormattedEvent {
           text: `Strike incoming → ${tk} at ${coordStr(e.target)}`,
         };
       }
-      if (kind === "conquer") {
-        const size = (e.region_size as number | undefined) ?? 0;
-        const ctr = e.center !== null ? ` near ${coordStr(e.center)}` : "";
-        return {
-          side: "enemy",
-          text: `Retaliation push (${size} cells)${ctr}`,
-        };
-      }
+      // Conquer salients no longer emit salient_spawned (they emit
+      // salient_staging_spawned then salient_activated). Only destroy reaches here.
       return { side: "enemy", text: `Salient spawned (${kind ?? "?"})` };
+    }
+    case "salient_staging_spawned": {
+      return {
+        side: "enemy",
+        text: `Salient charging at ${coordStr(e.staging_coord)}`,
+      };
+    }
+    case "salient_activated": {
+      const axis = e.axis;
+      const axisStr = Array.isArray(axis) && axis.length === 2 ? `(${axis[0]}, ${axis[1]})` : "?";
+      return {
+        side: "enemy",
+        text: `Salient activated, axis ${axisStr}`,
+      };
     }
     case "salient_ended": {
       const kind = e.kind as string | undefined;
@@ -138,6 +147,12 @@ function formatEvent(e: MatchEvent): FormattedEvent {
       if (reason === "expired") {
         const label = kind === "conquer" ? "Retaliation" : "Strike";
         return { side: "contested", text: `${label} ended (timed out)` };
+      }
+      if (reason === "intercepted") {
+        return { side: "se", text: "Salient intercepted!" };
+      }
+      if (reason === "extinguished") {
+        return { side: "se", text: "Salient extinguished" };
       }
       return { side: "system", text: `Salient ended (${reason ?? "?"})` };
     }

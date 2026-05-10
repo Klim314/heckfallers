@@ -23,7 +23,15 @@ if TYPE_CHECKING:
     from .world import World
 
 
-PoiKind = Literal["fob", "artillery", "fortress", "resistance_node", "build_site", "factory"]
+PoiKind = Literal[
+    "fob",
+    "artillery",
+    "fortress",
+    "resistance_node",
+    "build_site",
+    "factory",
+    "salient_staging",
+]
 
 
 @dataclass
@@ -60,12 +68,18 @@ class POI:
             # Build sites are visible placeholders, not active infrastructure.
             return 0.0
 
+        if self.kind == "salient_staging":
+            # Staging POI is a target, not an active buff/debuff source.
+            return 0.0
+
         return 0.0
 
     def siege_multiplier_for(self, cell: Cell, params: SimParams) -> float:
         """Cells under a Fortress need extra progress to flip."""
         if self.kind == "fortress" and distance(self.coord, cell.coord) <= params.fortress_radius:
             return params.fortress_siege_multiplier
+        if self.kind == "salient_staging" and self.coord == cell.coord:
+            return params.conquer_staging_siege_mult
         return 1.0
 
     def to_wire(self) -> dict:
